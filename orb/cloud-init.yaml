@@ -1,0 +1,10 @@
+#cloud-config
+package_update: true
+package_upgrade: true
+package_reboot_if_required: false
+
+# Keep cloud-init stable and small. bootstrap/ owns the changing toolchain.
+packages:
+  - ca-certificates
+  - curl
+  - git

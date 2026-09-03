@@ -1,0 +1,67 @@
+#!/usr/bin/env bash
+set -Eeuo pipefail
+
+DEV_MACHINE_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+
+usage() {
+  cat <<'USAGE'
+Usage:
+  dev create work|personal [--no-provision] [--skip-ai] [--dry-run]
+  dev provision work|personal [--skip-ai] [--dry-run]
+  dev destroy work|personal [--yes] [--dry-run]
+  dev rebuild work|personal [--yes] [--skip-ai] [--dry-run]
+  dev clone work|personal EXPERIMENT [--dry-run]
+  dev destroy-experiment work|personal EXPERIMENT [--yes] [--dry-run]
+  dev list
+
+Destructive commands always resolve one exact machine name and never use globs.
+USAGE
+}
+
+command_name=${1:-}
+if [ -z "$command_name" ]; then
+  usage
+  exit 2
+fi
+shift
+
+case "$command_name" in
+  create)
+    exec "$DEV_MACHINE_ROOT/orb/create.sh" "$@"
+    ;;
+  provision)
+    exec "$DEV_MACHINE_ROOT/orb/provision.sh" "$@"
+    ;;
+  destroy)
+    profile=${1:-}
+    [ -n "$profile" ] || { usage >&2; exit 2; }
+    shift
+    exec "$DEV_MACHINE_ROOT/orb/destroy.sh" "$profile" primary "$@"
+    ;;
+  rebuild)
+    exec "$DEV_MACHINE_ROOT/orb/rebuild.sh" "$@"
+    ;;
+  clone)
+    exec "$DEV_MACHINE_ROOT/orb/clone.sh" "$@"
+    ;;
+  destroy-experiment)
+    profile=${1:-}
+    experiment=${2:-}
+    [ -n "$profile" ] && [ -n "$experiment" ] || { usage >&2; exit 2; }
+    shift 2
+    exec "$DEV_MACHINE_ROOT/orb/destroy.sh" "$profile" experiment "$experiment" "$@"
+    ;;
+  list)
+    [ "$#" -eq 0 ] || { usage >&2; exit 2; }
+    exec orbctl list
+    ;;
+  -h|--help|help)
+    usage
+    ;;
+  *)
+    printf 'Unknown command: %s\n\n' "$command_name" >&2
+    usage >&2
+    exit 2
+    ;;
+esac
+

@@ -1,0 +1,21 @@
+[models]
+default = "grok-4.6"
+default_reasoning_effort = "xhigh"
+
+[ui]
+permission_mode = "auto"
+yolo = false
+max_thoughts_width = 120
+screen_mode = "minimal"
+
+[features]
+remember_mode = false
+
+[sandbox]
+profile = "safe-workspace"
+auto_allow_bash = false
+
+[shell_environment_policy]
+inherit = "all"
+ignore_default_excludes = false
+exclude = ["*PASSWORD*", "*CREDENTIAL*"]

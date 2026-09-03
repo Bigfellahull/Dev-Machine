@@ -1,0 +1,42 @@
+format = "$directory$git_branch$git_status$nodejs$python$rust$dotnet$golang$cmd_duration$line_break$character"
+
+[directory]
+style = "bold cyan"
+truncation_length = 3
+
+[git_branch]
+symbol = " "
+style = "bold purple"
+
+[git_status]
+style = "yellow"
+
+[nodejs]
+symbol = " "
+format = "via [$symbol$version]($style) "
+
+[python]
+symbol = " "
+format = "via [$symbol$version]($style) "
+
+[rust]
+symbol = " "
+format = "via [$symbol$version]($style) "
+
+[dotnet]
+symbol = ".NET "
+format = "via [$symbol$version]($style) "
+style = "bold blue"
+
+[golang]
+symbol = " "
+format = "via [$symbol$version]($style) "
+style = "bold cyan"
+
+[cmd_duration]
+min_time = 1000
+format = "took [$duration]($style) "
+
+[character]
+success_symbol = "[❯](bold green)"
+error_symbol = "[❯](bold red)"

@@ -1,0 +1,539 @@
+#!/usr/bin/env bash
+set -Eeuo pipefail
+
+tls_directory="$HOME/.config/local-dev-tls"
+system_ca_directory=/usr/local/share/ca-certificates
+temporary_directory=
+backup_directory=
+system_ca_backup=
+system_ca_target=
+system_ca_existed=0
+system_ca_changed=0
+runtime_replacement_started=0
+transaction_active=0
+
+info() {
+  printf '    %s\n' "$*"
+}
+
+warn() {
+  printf 'WARN: %s\n' "$*" >&2
+}
+
+die() {
+  printf 'ERROR: %s\n' "$*" >&2
+  exit 1
+}
+
+require_command() {
+  command -v "$1" >/dev/null 2>&1 || die "Required command not found: $1"
+}
+
+require_target_ubuntu() {
+  [ "$(uname -s)" = Linux ] || die "This command must run inside Linux."
+  [ -r /etc/os-release ] || die "Cannot identify the Linux distribution."
+  # shellcheck disable=SC1091
+  . /etc/os-release
+  [ "${ID:-}" = ubuntu ] || die "Ubuntu is required; detected ${ID:-unknown}."
+}
+
+rollback_tls_transaction() {
+  rollback_failed=0
+  if [ "$runtime_replacement_started" -eq 1 ]; then
+    if [ -e "$tls_directory" ] || [ -L "$tls_directory" ]; then
+      if [ -d "$tls_directory" ] && [ ! -L "$tls_directory" ]; then
+        rm -R "$tls_directory" || rollback_failed=1
+      else
+        warn "Cannot remove unsafe failed TLS runtime path: $tls_directory"
+        rollback_failed=1
+      fi
+    fi
+    if [ -n "$backup_directory" ] && [ -d "$backup_directory" ] \
+      && [ ! -e "$tls_directory" ]; then
+      mv "$backup_directory" "$tls_directory" || rollback_failed=1
+    elif [ -n "$backup_directory" ] && [ -d "$backup_directory" ]; then
+      rollback_failed=1
+    fi
+  fi
+
+  if [ "$system_ca_changed" -eq 1 ]; then
+    system_restore_failed=0
+    if [ "$system_ca_existed" -eq 1 ] && [ -f "$system_ca_backup" ]; then
+      sudo install -m 0644 "$system_ca_backup" "$system_ca_target" \
+        || { rollback_failed=1; system_restore_failed=1; }
+    else
+      sudo rm -f "$system_ca_target" \
+        || { rollback_failed=1; system_restore_failed=1; }
+    fi
+    if [ "$system_restore_failed" -eq 0 ]; then
+      sudo update-ca-certificates || rollback_failed=1
+    fi
+  fi
+  [ "$rollback_failed" -eq 0 ]
+}
+
+cleanup_tls() {
+  exit_status=$?
+  rollback_complete=1
+  set +e
+  if [ "$transaction_active" -eq 1 ]; then
+    if ! rollback_tls_transaction; then
+      rollback_complete=0
+      warn "Could not fully roll back failed TLS replacement."
+    fi
+  fi
+  if [ -n "$temporary_directory" ] && [ -d "$temporary_directory" ]; then
+    rm -R "$temporary_directory"
+  fi
+  if { [ "$transaction_active" -eq 0 ] || [ "$rollback_complete" -eq 1 ]; } \
+    && [ -n "$system_ca_backup" ] && [ -f "$system_ca_backup" ]; then
+    rm -f "$system_ca_backup"
+  fi
+  return "$exit_status"
+}
+
+stat_mode() {
+  if [ "$(uname -s)" = Darwin ]; then
+    stat -f '%Lp' "$1"
+  else
+    stat -c '%a' "$1"
+  fi
+}
+
+stat_uid() {
+  if [ "$(uname -s)" = Darwin ]; then
+    stat -f '%u' "$1"
+  else
+    stat -c '%u' "$1"
+  fi
+}
+
+path_has_mode_and_owner() {
+  path=$1
+  expected_mode=$2
+
+  [ ! -L "$path" ] || return 1
+  [ "$(stat_uid "$path")" = "$(id -u)" ] || return 1
+  [ "$(stat_mode "$path")" = "$expected_mode" ]
+}
+
+keys_match() {
+  certificate=$1
+  private_key=$2
+  certificate_public_key=$(mktemp "${TMPDIR:-/tmp}/dev-machine-cert-public.XXXXXX")
+  private_public_key=$(mktemp "${TMPDIR:-/tmp}/dev-machine-key-public.XXXXXX")
+
+  if ! openssl x509 -in "$certificate" -pubkey -noout >"$certificate_public_key" \
+    || ! openssl pkey -in "$private_key" -pubout >"$private_public_key" 2>/dev/null; then
+    rm -f "$certificate_public_key" "$private_public_key"
+    return 1
+  fi
+  if cmp -s "$certificate_public_key" "$private_public_key"; then
+    result=0
+  else
+    result=1
+  fi
+  rm -f "$certificate_public_key" "$private_public_key"
+  return "$result"
+}
+
+pem_has_single_block() {
+  pem_file=$1
+  pem_kind=$2
+
+  awk -v kind="$pem_kind" '
+    BEGIN { state = 0 }
+    state == 0 {
+      if (kind == "certificate" && $0 == "-----BEGIN CERTIFICATE-----") {
+        expected_end = "-----END CERTIFICATE-----"
+        state = 1
+        next
+      }
+      if (kind == "private-key" \
+          && $0 ~ /^-----BEGIN ([A-Z0-9]+ )*PRIVATE KEY-----$/) {
+        expected_end = $0
+        sub("BEGIN", "END", expected_end)
+        state = 1
+        next
+      }
+      exit 1
+    }
+    state == 1 {
+      if ($0 == expected_end) {
+        state = 2
+        next
+      }
+      if ($0 ~ /^-----BEGIN / || $0 ~ /^-----END /) exit 1
+      next
+    }
+    state == 2 { exit 1 }
+    END { if (state != 2) exit 1 }
+  ' "$pem_file"
+}
+
+pem_round_trips_exactly() {
+  pem_file=$1
+  pem_kind=$2
+  canonical_pem=$(mktemp "${TMPDIR:-/tmp}/dev-machine-canonical-pem.XXXXXX")
+  chmod 0600 "$canonical_pem"
+
+  if [ "$pem_kind" = certificate ]; then
+    openssl x509 -in "$pem_file" -out "$canonical_pem" >/dev/null 2>&1 \
+      || { rm -f "$canonical_pem"; return 1; }
+  else
+    openssl pkey -in "$pem_file" -out "$canonical_pem" >/dev/null 2>&1 \
+      || { rm -f "$canonical_pem"; return 1; }
+  fi
+  if cmp -s "$pem_file" "$canonical_pem"; then
+    result=0
+  else
+    result=1
+  fi
+  rm -f "$canonical_pem"
+  return "$result"
+}
+
+root_certificate_has_expected_role() {
+  root_certificate=$1
+
+  openssl x509 -in "$root_certificate" -noout -ext basicConstraints \
+    | grep -Fq 'CA:TRUE' || return 1
+  openssl x509 -in "$root_certificate" -noout -ext keyUsage \
+    | grep -Fq 'Certificate Sign' || return 1
+  openssl verify -CAfile "$root_certificate" -check_ss_sig "$root_certificate" \
+    >/dev/null
+}
+
+leaf_certificate_has_expected_role() {
+  leaf_certificate=$1
+  root_certificate=$2
+  basic_constraints=$(openssl x509 -in "$leaf_certificate" -noout \
+    -ext basicConstraints 2>/dev/null) || return 1
+  ! grep -Fq 'CA:TRUE' <<<"$basic_constraints" || return 1
+  openssl x509 -in "$leaf_certificate" -noout -ext keyUsage \
+    | grep -Fq 'Digital Signature' || return 1
+  openssl x509 -in "$leaf_certificate" -noout -ext extendedKeyUsage \
+    | grep -Fq 'TLS Web Server Authentication' || return 1
+  openssl verify -CAfile "$root_certificate" -purpose sslserver \
+    "$leaf_certificate" >/dev/null
+}
+
+certificate_has_expected_sans() {
+  san_extension=$(openssl x509 -in "$1" -noout -ext subjectAltName 2>/dev/null) \
+    || return 1
+  actual_sans=$(printf '%s\n' "$san_extension" \
+    | sed '1d' \
+    | tr ',' '\n' \
+    | sed -E 's/^[[:space:]]+//; s/[[:space:]]+$//' \
+    | sed '/^$/d' \
+    | LC_ALL=C sort)
+  expected_sans=$(printf '%s\n' \
+    'DNS:*.dev.localhost' \
+    'DNS:dev.localhost' \
+    'DNS:localhost' \
+    'IP Address:0:0:0:0:0:0:0:1' \
+    'IP Address:127.0.0.1' \
+    | LC_ALL=C sort)
+  [ "$actual_sans" = "$expected_sans" ]
+}
+
+validate_material_directory() {
+  source_directory=$1
+  expected_profile=$2
+  expected_entry_count=${3:-4}
+  entry_count=
+
+  [ -d "$source_directory" ] \
+    && path_has_mode_and_owner "$source_directory" 700 || return 1
+  entry_count=$(find "$source_directory" -mindepth 1 -maxdepth 1 -print \
+    | wc -l | tr -d '[:space:]')
+  [ "$entry_count" = "$expected_entry_count" ] || return 1
+  [ -f "$source_directory/root-ca.pem" ] \
+    && path_has_mode_and_owner "$source_directory/root-ca.pem" 644 || return 1
+  [ -f "$source_directory/localhost.pem" ] \
+    && path_has_mode_and_owner "$source_directory/localhost.pem" 644 || return 1
+  [ -f "$source_directory/localhost-key.pem" ] \
+    && path_has_mode_and_owner "$source_directory/localhost-key.pem" 600 || return 1
+  [ -f "$source_directory/profile" ] \
+    && path_has_mode_and_owner "$source_directory/profile" 644 || return 1
+  [ ! -e "$source_directory/rootCA-key.pem" ] \
+    && [ ! -L "$source_directory/rootCA-key.pem" ] || return 1
+  [ "$(<"$source_directory/profile")" = "$expected_profile" ] || return 1
+  pem_has_single_block "$source_directory/root-ca.pem" certificate || return 1
+  pem_has_single_block "$source_directory/localhost.pem" certificate || return 1
+  pem_has_single_block "$source_directory/localhost-key.pem" private-key || return 1
+  pem_round_trips_exactly "$source_directory/root-ca.pem" certificate || return 1
+  pem_round_trips_exactly "$source_directory/localhost.pem" certificate || return 1
+  pem_round_trips_exactly "$source_directory/localhost-key.pem" private-key || return 1
+  openssl x509 -in "$source_directory/root-ca.pem" -checkend 31536000 -noout \
+    >/dev/null || return 1
+  root_certificate_has_expected_role "$source_directory/root-ca.pem" || return 1
+  openssl verify -CAfile "$source_directory/root-ca.pem" \
+    "$source_directory/localhost.pem" >/dev/null || return 1
+  openssl x509 -in "$source_directory/localhost.pem" -checkend 2592000 -noout \
+    >/dev/null || return 1
+  leaf_certificate_has_expected_role "$source_directory/localhost.pem" \
+    "$source_directory/root-ca.pem" || return 1
+  keys_match "$source_directory/localhost.pem" "$source_directory/localhost-key.pem" \
+    || return 1
+  certificate_has_expected_sans "$source_directory/localhost.pem"
+}
+
+create_pfx() {
+  directory=$1
+
+  if [ -f "$tls_directory/localhost.pfx-password" ] \
+    && path_has_mode_and_owner "$tls_directory/localhost.pfx-password" 600; then
+    install -m 0600 "$tls_directory/localhost.pfx-password" \
+      "$directory/localhost.pfx-password"
+  else
+    openssl rand -hex 32 >"$directory/localhost.pfx-password"
+    chmod 0600 "$directory/localhost.pfx-password"
+  fi
+
+  openssl pkcs12 -export \
+    -out "$directory/localhost.pfx" \
+    -inkey "$directory/localhost-key.pem" \
+    -in "$directory/localhost.pem" \
+    -certfile "$directory/root-ca.pem" \
+    -name local-dev-tls \
+    -passout "file:$directory/localhost.pfx-password" >/dev/null 2>&1
+  chmod 0600 "$directory/localhost.pfx"
+}
+
+pfx_matches_certificate() {
+  directory=$1
+  pfx_certificate=$(mktemp "${TMPDIR:-/tmp}/dev-machine-pfx-cert.XXXXXX")
+
+  if ! openssl pkcs12 -in "$directory/localhost.pfx" -clcerts -nokeys \
+    -passin "file:$directory/localhost.pfx-password" -out "$pfx_certificate" \
+    >/dev/null 2>&1; then
+    rm -f "$pfx_certificate"
+    return 1
+  fi
+  pfx_fingerprint=$(openssl x509 -in "$pfx_certificate" -noout -fingerprint -sha256)
+  pem_fingerprint=$(openssl x509 -in "$directory/localhost.pem" -noout -fingerprint -sha256)
+  rm -f "$pfx_certificate"
+  [ "$pfx_fingerprint" = "$pem_fingerprint" ]
+}
+
+validate_runtime_directory() {
+  directory=$1
+  expected_profile=$2
+
+  validate_material_directory "$directory" "$expected_profile" 6 || return 1
+  [ -f "$directory/localhost.pfx" ] \
+    && path_has_mode_and_owner "$directory/localhost.pfx" 600 || return 1
+  [ -f "$directory/localhost.pfx-password" ] \
+    && path_has_mode_and_owner "$directory/localhost.pfx-password" 600 || return 1
+  pfx_matches_certificate "$directory"
+}
+
+load_installed_profile() {
+  profile_file="$HOME/.config/dev-machine/profile"
+  [ -f "$profile_file" ] && [ ! -L "$profile_file" ] \
+    || die "Development machine profile marker is missing: $profile_file"
+  profile=$(<"$profile_file")
+  case "$profile" in
+    work|personal) ;;
+    *) die "Development machine profile marker is invalid: $profile" ;;
+  esac
+}
+
+material_matches_installed() {
+  source_directory=$1
+
+  [ -d "$tls_directory" ] && [ ! -L "$tls_directory" ] || return 1
+  cmp -s "$source_directory/root-ca.pem" "$tls_directory/root-ca.pem" \
+    && cmp -s "$source_directory/localhost.pem" "$tls_directory/localhost.pem" \
+    && cmp -s "$source_directory/localhost-key.pem" "$tls_directory/localhost-key.pem" \
+    && cmp -s "$source_directory/profile" "$tls_directory/profile"
+}
+
+confirm_replacement() {
+  expected_profile=$1
+  printf 'Replace local development TLS state for %s? Type %s to continue: ' \
+    "$expected_profile" "$expected_profile" >&2
+  read -r confirmation
+  [ "$confirmation" = "$expected_profile" ] \
+    || die "Local development TLS replacement was not confirmed."
+}
+
+install_system_ca() {
+  source_certificate=$1
+  profile=$2
+  target_certificate="$system_ca_directory/dev-machine-local-dev-$profile.crt"
+
+  system_ca_changed=1
+  sudo install -m 0644 "$source_certificate" "$target_certificate"
+  sudo update-ca-certificates
+}
+
+prepare_system_ca_backup() {
+  profile=$1
+  system_ca_target="$system_ca_directory/dev-machine-local-dev-$profile.crt"
+  system_ca_existed=0
+
+  if [ -e "$system_ca_target" ] || [ -L "$system_ca_target" ]; then
+    [ -f "$system_ca_target" ] && [ ! -L "$system_ca_target" ] \
+      || die "Refusing unsafe system CA target: $system_ca_target"
+    system_ca_backup=$(mktemp "$HOME/.config/.local-dev-system-ca.XXXXXX")
+    install -m 0600 "$system_ca_target" "$system_ca_backup"
+    system_ca_existed=1
+  fi
+}
+
+replace_runtime_directory() {
+  if [ -e "$tls_directory" ] || [ -L "$tls_directory" ]; then
+    [ -d "$tls_directory" ] && [ ! -L "$tls_directory" ] \
+      || die "Refusing unsafe local development TLS path: $tls_directory"
+    backup_directory="$HOME/.config/.local-dev-tls.previous.$$"
+    [ ! -e "$backup_directory" ] \
+      || die "Temporary TLS backup already exists: $backup_directory"
+    mv "$tls_directory" "$backup_directory"
+  fi
+
+  runtime_replacement_started=1
+  mv "$temporary_directory" "$tls_directory"
+  temporary_directory=
+}
+
+commit_tls_transaction() {
+  transaction_active=0
+  runtime_replacement_started=0
+  system_ca_changed=0
+  if [ -n "$backup_directory" ]; then
+    rm -R "$backup_directory"
+    backup_directory=
+  fi
+  if [ -n "$system_ca_backup" ]; then
+    rm -f "$system_ca_backup"
+    system_ca_backup=
+  fi
+}
+
+system_ca_is_installed() {
+  profile=$1
+  system_certificate="$system_ca_directory/dev-machine-local-dev-$profile.crt"
+
+  [ -f "$system_certificate" ] && [ ! -L "$system_certificate" ] || return 1
+  [ "$(stat_uid "$system_certificate")" = 0 ] || return 1
+  [ "$(stat_mode "$system_certificate")" = 644 ] || return 1
+  cmp -s "$tls_directory/root-ca.pem" "$system_certificate" || return 1
+  openssl verify -CApath /etc/ssl/certs "$tls_directory/localhost.pem" >/dev/null
+}
+
+verify_installed() {
+  load_installed_profile
+  if ! validate_runtime_directory "$tls_directory" "$profile"; then
+    warn "Local development TLS material is missing, expired or unsafe: $tls_directory"
+    return 1
+  fi
+  if ! system_ca_is_installed "$profile"; then
+    warn "Local development CA is not installed in Ubuntu's trust store."
+    return 1
+  fi
+}
+
+import_bundle() {
+  requested_source=$1
+  assume_yes=$2
+
+  require_target_ubuntu
+  require_command openssl
+  load_installed_profile
+  [ -d "$requested_source" ] && [ ! -L "$requested_source" ] \
+    || die "TLS handoff must be a real directory: $requested_source"
+  source_directory="$(cd "$requested_source" && pwd -P)"
+  validate_material_directory "$source_directory" "$profile" \
+    || die "TLS handoff is invalid, unsafe or belongs to another profile."
+
+  source_differs=0
+  if [ -e "$tls_directory" ] || [ -L "$tls_directory" ]; then
+    [ -d "$tls_directory" ] && [ ! -L "$tls_directory" ] \
+      || die "Refusing unsafe local development TLS path: $tls_directory"
+    if ! material_matches_installed "$source_directory"; then
+      source_differs=1
+      if [ "$assume_yes" -ne 1 ]; then
+        confirm_replacement "$profile"
+      fi
+    fi
+  fi
+
+  mkdir -p "$HOME/.config"
+  temporary_directory="$(mktemp -d "$HOME/.config/.local-dev-tls.XXXXXX")"
+  chmod 0700 "$temporary_directory"
+  install -m 0644 "$source_directory/root-ca.pem" "$temporary_directory/root-ca.pem"
+  install -m 0644 "$source_directory/localhost.pem" "$temporary_directory/localhost.pem"
+  install -m 0600 "$source_directory/localhost-key.pem" \
+    "$temporary_directory/localhost-key.pem"
+  install -m 0644 "$source_directory/profile" "$temporary_directory/profile"
+  create_pfx "$temporary_directory"
+  validate_runtime_directory "$temporary_directory" "$profile" \
+    || die "Prepared local development TLS state failed validation."
+
+  prepare_system_ca_backup "$profile"
+  transaction_active=1
+  install_system_ca "$temporary_directory/root-ca.pem" "$profile"
+  replace_runtime_directory
+  verify_installed || die "Installed local development TLS state failed verification."
+  commit_tls_transaction
+  if [ "$source_differs" -eq 1 ]; then
+    info "Replaced local development TLS state for $profile"
+  else
+    info "Installed local development TLS state for $profile"
+  fi
+}
+
+print_paths() {
+  printf 'root_ca=%s\n' "$tls_directory/root-ca.pem"
+  printf 'certificate=%s\n' "$tls_directory/localhost.pem"
+  printf 'private_key=%s\n' "$tls_directory/localhost-key.pem"
+  printf 'pfx=%s\n' "$tls_directory/localhost.pfx"
+  printf 'pfx_password=%s\n' "$tls_directory/localhost.pfx-password"
+}
+
+usage() {
+  cat <<'USAGE'
+Usage:
+  local-dev-tls import SOURCE_DIRECTORY [--yes]
+  local-dev-tls verify
+  local-dev-tls paths
+USAGE
+}
+
+main() {
+  command_name="${1:-}"
+  case "$command_name" in
+    import)
+      [ "$#" -ge 2 ] && [ "$#" -le 3 ] || { usage >&2; exit 1; }
+      assume_yes=0
+      if [ "$#" -eq 3 ]; then
+        [ "$3" = --yes ] || die "Unknown import option: $3"
+        assume_yes=1
+      fi
+      import_bundle "$2" "$assume_yes"
+      ;;
+    verify)
+      [ "$#" -eq 1 ] || { usage >&2; exit 1; }
+      require_target_ubuntu
+      verify_installed
+      ;;
+    paths)
+      [ "$#" -eq 1 ] || { usage >&2; exit 1; }
+      print_paths
+      ;;
+    -h|--help)
+      usage
+      ;;
+    *)
+      usage >&2
+      exit 1
+      ;;
+  esac
+}
+
+if [ "${BASH_SOURCE[0]}" = "$0" ]; then
+  trap cleanup_tls EXIT
+  main "$@"
+fi

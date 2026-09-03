@@ -1,0 +1,37 @@
+# Install selected, edited stanzas in ~/.ssh/config on the MacBook Air.
+# Use a separate Air key for each physical mini.
+
+Host work-mini
+  HostName work-mini
+  User MINI_MACOS_USER
+  IdentityFile ~/.ssh/work-mini_ed25519
+  IdentitiesOnly yes
+
+Host work-dev
+  HostName 127.0.0.1
+  Port 32222
+  User LINUX_USER@work-dev
+  ProxyJump work-mini
+  IdentityFile ~/.ssh/work-mini_ed25519
+  IdentitiesOnly yes
+  HostKeyAlias work-dev-via-work-mini
+  ServerAliveInterval 30
+  ServerAliveCountMax 3
+
+Host personal-mini
+  HostName personal-mini
+  User MINI_MACOS_USER
+  IdentityFile ~/.ssh/personal-mini_ed25519
+  IdentitiesOnly yes
+
+Host personal-dev
+  HostName 127.0.0.1
+  Port 32222
+  User LINUX_USER@personal-dev
+  ProxyJump personal-mini
+  IdentityFile ~/.ssh/personal-mini_ed25519
+  IdentitiesOnly yes
+  HostKeyAlias personal-dev-via-personal-mini
+  ServerAliveInterval 30
+  ServerAliveCountMax 3
+

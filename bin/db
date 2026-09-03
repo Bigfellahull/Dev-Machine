@@ -1,0 +1,309 @@
+#!/usr/bin/env bash
+set -Eeuo pipefail
+
+SCRIPT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+if [ -n "${DEV_MACHINE_RUNTIME_ROOT:-}" ]; then
+  :
+elif [ -r "$HOME/.config/dev-machine/profile" ] \
+  && [ -d "$HOME/.local/share/dev-machine/docker" ]; then
+  DEV_MACHINE_RUNTIME_ROOT="$HOME/.local/share/dev-machine"
+elif [ -d "$SCRIPT_ROOT/docker" ]; then
+  DEV_MACHINE_RUNTIME_ROOT=$SCRIPT_ROOT
+else
+  DEV_MACHINE_RUNTIME_ROOT="$HOME/.local/share/dev-machine"
+fi
+
+IMAGES_ENV="$DEV_MACHINE_RUNTIME_ROOT/docker/images.env"
+ENABLED_ENGINES_FILE="$DEV_MACHINE_RUNTIME_ROOT/docker/enabled-engines"
+DEFAULT_ENV_FILE=${DEV_MACHINE_DB_ENV:-$HOME/.config/dev-machine/db.env}
+DB_DRY_RUN=0
+enabled_engines=()
+
+usage() {
+  cat <<'USAGE'
+Usage:
+  db start|stop|restart|reset|logs|pull ENGINE [options]
+  db status [ENGINE] [options]
+  db connection ENGINE [options]
+
+Options:
+  --project NAME    Logical project name (default: current Git repository)
+  --env-file PATH  Private credentials/ports file
+  --yes             Confirm an exact reset without prompting
+  --dry-run         Print the Docker command without running it
+
+Examples:
+  db start postgres
+  db status
+  db reset mssql --project project-a
+
+Containers and volumes are isolated as PROJECT-ENGINE. Images and the OrbStack
+Docker cache remain shared. From Ubuntu, services use docker.orb.internal and
+the configured published port. Available engines depend on the machine profile.
+USAGE
+  printf 'Available engines: %s\n' "${enabled_engines[*]}"
+}
+
+die() {
+  printf 'ERROR: %s\n' "$*" >&2
+  exit 1
+}
+
+usage_error() {
+  printf 'ERROR: %s\n\n' "$*" >&2
+  usage >&2
+  exit 2
+}
+
+print_command() {
+  printf 'DRY-RUN:'
+  for argument in "$@"; do
+    printf ' %q' "$argument"
+  done
+  printf '\n'
+}
+
+docker_cli() {
+  case "$(uname -s)" in
+    Linux)
+      if [ "$DB_DRY_RUN" -eq 1 ]; then
+        print_command mac docker "$@"
+      elif command -v mac >/dev/null 2>&1; then
+        mac docker "$@"
+      else
+        die "OrbStack's 'mac' command bridge is required for Linux database administration."
+      fi
+      ;;
+    Darwin)
+      if [ "$DB_DRY_RUN" -eq 1 ]; then
+        print_command docker "$@"
+      elif command -v docker >/dev/null 2>&1; then
+        docker "$@"
+      else
+        die "Docker CLI is unavailable on the macOS host."
+      fi
+      ;;
+    *)
+      die "Database administration is supported only on macOS and OrbStack Linux."
+      ;;
+  esac
+}
+
+sanitize_project() {
+  raw_name=$1
+  project_name=$(printf '%s' "$raw_name" \
+    | tr '[:upper:]' '[:lower:]' \
+    | sed -E 's/[^a-z0-9]+/-/g; s/^-+//; s/-+$//')
+  [ -n "$project_name" ] || die "Cannot derive a safe project name from: $raw_name"
+  [ "${#project_name}" -le 48 ] || die "Project name is longer than 48 characters: $project_name"
+  printf '%s\n' "$project_name"
+}
+
+default_project() {
+  if git_root=$(git rev-parse --show-toplevel 2>/dev/null); then
+    basename "$git_root"
+  else
+    basename "$PWD"
+  fi
+}
+
+validate_engine() {
+  case "$1" in
+    postgres|mssql|redis) ;;
+    *) usage_error "Database engine must be postgres, mssql or redis." ;;
+  esac
+
+  for enabled_engine in "${enabled_engines[@]}"; do
+    [ "$1" = "$enabled_engine" ] && return 0
+  done
+  usage_error "Database engine '$1' is not enabled for this machine profile."
+}
+
+load_enabled_engines() {
+  configured_engines=${DEV_MACHINE_DB_ENGINES:-}
+  if [ -z "$configured_engines" ] && [ -r "$ENABLED_ENGINES_FILE" ]; then
+    configured_engines=$(<"$ENABLED_ENGINES_FILE")
+  fi
+  configured_engines=${configured_engines:-"postgres mssql redis"}
+  read -r -a enabled_engines <<<"$configured_engines"
+  [ "${#enabled_engines[@]}" -gt 0 ] || die "No database engines are enabled."
+
+  for enabled_engine in "${enabled_engines[@]}"; do
+    case "$enabled_engine" in
+      postgres|mssql|redis) ;;
+      *) die "Invalid database engine in profile configuration: $enabled_engine" ;;
+    esac
+  done
+}
+
+env_has_value() {
+  key=$1
+  file=$2
+  awk -F= -v wanted="$key" '
+    $1 == wanted {
+      value = substr($0, index($0, "=") + 1)
+      if (length(value) > 0) found = 1
+    }
+    END { exit found ? 0 : 1 }
+  ' "$file"
+}
+
+env_value_or_default() {
+  key=$1
+  default_value=$2
+  file=$3
+  if [ -r "$file" ]; then
+    value=$(awk -F= -v wanted="$key" '$1 == wanted { print substr($0, index($0, "=") + 1); exit }' "$file")
+  else
+    value=
+  fi
+  printf '%s\n' "${value:-$default_value}"
+}
+
+require_secret() {
+  key=$1
+  [ -r "$env_file" ] || die "Missing private config: $env_file (copy docker/db.env.example and chmod 0600)"
+  env_has_value "$key" "$env_file" || die "$key is empty or missing in $env_file"
+
+  if [ "$DB_DRY_RUN" -eq 1 ]; then
+    return 0
+  fi
+
+  secret_value=$(awk -F= -v wanted="$key" '$1 == wanted { print substr($0, index($0, "=") + 1); exit }' "$env_file")
+  case "$(printf '%s' "$secret_value" | tr '[:upper:]' '[:lower:]')" in
+    *replace*) die "$key still contains the placeholder value in $env_file" ;;
+  esac
+
+  if [ "$(uname -s)" = Darwin ]; then
+    file_mode=$(stat -f %Lp "$env_file")
+  else
+    file_mode=$(stat -c %a "$env_file")
+  fi
+  case "$file_mode" in
+    *[1-7][0-7]|*[0-7][1-7]) die "$env_file permissions are $file_mode; run chmod 600 '$env_file'" ;;
+  esac
+}
+
+compose_for() {
+  selected_engine=$1
+  compose_file="$DEV_MACHINE_RUNTIME_ROOT/docker/$selected_engine/compose.yaml"
+  [ -r "$compose_file" ] || die "Compose definition not found: $compose_file"
+  [ -r "$IMAGES_ENV" ] || die "Image version file not found: $IMAGES_ENV"
+
+  compose_args=(compose --project-name "$project-$selected_engine" --env-file "$IMAGES_ENV")
+  if [ -r "$env_file" ]; then
+    compose_args+=(--env-file "$env_file")
+  fi
+  compose_args+=(-f "$compose_file")
+}
+
+run_action() {
+  selected_engine=$1
+  validate_engine "$selected_engine"
+  compose_for "$selected_engine"
+
+  case "$action" in
+    start)
+      case "$selected_engine" in
+        postgres) require_secret POSTGRES_PASSWORD ;;
+        mssql)
+          require_secret MSSQL_SA_PASSWORD
+          printf 'WARN: SQL Server is x86-64-only and unsupported by Microsoft under Apple Silicon translation.\n' >&2
+          ;;
+        redis) require_secret REDIS_PASSWORD ;;
+      esac
+      docker_cli "${compose_args[@]}" up -d
+      ;;
+    stop)
+      docker_cli "${compose_args[@]}" stop
+      ;;
+    restart)
+      docker_cli "${compose_args[@]}" restart
+      ;;
+    reset)
+      target="$project-$selected_engine"
+      if [ "$DB_DRY_RUN" -eq 0 ] && [ "$confirmed" -ne 1 ]; then
+        [ -t 0 ] || die "Reset requires an interactive terminal or --yes."
+        printf "Type '%s' to delete its container and volume: " "$target" >&2
+        IFS= read -r answer
+        [ "$answer" = "$target" ] || die "Confirmation did not match; nothing was reset."
+      fi
+      docker_cli "${compose_args[@]}" down --volumes --remove-orphans
+      ;;
+    logs)
+      docker_cli "${compose_args[@]}" logs --tail 100
+      ;;
+    pull)
+      docker_cli "${compose_args[@]}" pull
+      ;;
+    status)
+      printf '\n[%s]\n' "$selected_engine"
+      docker_cli "${compose_args[@]}" ps --all
+      ;;
+    connection)
+      case "$selected_engine" in
+        postgres) printf 'postgresql://%s@docker.orb.internal:%s/%s\n' \
+          "$(env_value_or_default POSTGRES_USER postgres "$env_file")" \
+          "$(env_value_or_default POSTGRES_PORT 5432 "$env_file")" \
+          "$(env_value_or_default POSTGRES_DB app "$env_file")" ;;
+        mssql) printf 'Server=docker.orb.internal,%s;User ID=sa;Encrypt=True;TrustServerCertificate=True\n' \
+          "$(env_value_or_default MSSQL_PORT 1433 "$env_file")" ;;
+        redis) printf 'redis://docker.orb.internal:%s (password omitted)\n' \
+          "$(env_value_or_default REDIS_PORT 6379 "$env_file")" ;;
+      esac
+      ;;
+  esac
+}
+
+load_enabled_engines
+
+action=${1:-}
+case "$action" in
+  start|stop|restart|reset|logs|pull|status|connection) ;;
+  -h|--help|help|'') usage; exit 0 ;;
+  *) usage_error "Unknown action: $action" ;;
+esac
+shift
+
+engine=
+if [ "$#" -gt 0 ] && [ "${1#--}" = "$1" ]; then
+  engine=$1
+  shift
+fi
+
+project_raw=
+env_file=$DEFAULT_ENV_FILE
+confirmed=0
+while [ "$#" -gt 0 ]; do
+  case "$1" in
+    --project)
+      [ "$#" -ge 2 ] || usage_error "--project requires a name"
+      project_raw=$2
+      shift 2
+      ;;
+    --env-file)
+      [ "$#" -ge 2 ] || usage_error "--env-file requires a path"
+      env_file=$2
+      shift 2
+      ;;
+    --yes) confirmed=1; shift ;;
+    --dry-run) DB_DRY_RUN=1; shift ;;
+    *) usage_error "Unknown option: $1" ;;
+  esac
+done
+
+project=$(sanitize_project "${project_raw:-$(default_project)}")
+case "$env_file" in
+  /*) ;;
+  *) env_file="$PWD/$env_file" ;;
+esac
+
+if [ "$action" = status ] && [ -z "$engine" ]; then
+  for selected_engine in "${enabled_engines[@]}"; do
+    run_action "$selected_engine"
+  done
+  exit 0
+fi
+
+[ -n "$engine" ] || usage_error "This action requires a database engine."
+run_action "$engine"

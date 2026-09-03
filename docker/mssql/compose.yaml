@@ -1,0 +1,19 @@
+services:
+  mssql:
+    image: ${MSSQL_IMAGE}
+    # SQL Server Linux images have no ARM64 build. OrbStack translates this
+    # development workload on Apple Silicon; Microsoft does not support it.
+    platform: linux/amd64
+    restart: unless-stopped
+    environment:
+      ACCEPT_EULA: "Y"
+      MSSQL_PID: Developer
+      MSSQL_SA_PASSWORD: ${MSSQL_SA_PASSWORD:-}
+    ports:
+      - "127.0.0.1:${MSSQL_PORT:-1433}:1433"
+    volumes:
+      - data:/var/opt/mssql
+
+volumes:
+  data:
+
