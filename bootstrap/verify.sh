@@ -115,10 +115,12 @@ fi
 
 required_commands=(
   age
+  bat
   bwrap
   curl
   db
   dotnet
+  fd
   fzf
   gh
   git
@@ -135,6 +137,7 @@ required_commands=(
   sqlc
   starship
   tmux
+  zoxide
   local-dev-tls
 )
 if [ "$profile" = work ]; then
@@ -221,9 +224,12 @@ if [ "$profile" = work ]; then
   command -v cargo >/dev/null 2>&1 && check_version cargo cargo --version
 fi
 command -v age >/dev/null 2>&1 && check_version age age --version
+command -v bat >/dev/null 2>&1 && check_version bat bat --version
+command -v fd >/dev/null 2>&1 && check_version fd fd --version
 command -v git-lfs >/dev/null 2>&1 && check_version git-lfs git lfs version
 command -v sqlc >/dev/null 2>&1 && check_version sqlc sqlc version
 command -v starship >/dev/null 2>&1 && check_version starship starship --version
+command -v zoxide >/dev/null 2>&1 && check_version zoxide zoxide --version
 if [ "$profile" = work ]; then
   command -v az >/dev/null 2>&1 \
     && check_version az az version --query '"azure-cli"' --output tsv

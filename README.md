@@ -75,12 +75,13 @@ bootstrap/verify.sh
 
 Authentication is intentionally interactive and separate from provisioning.
 Use the appropriate credentials independently on the work and personal hosts.
-Interactive Bash sessions use the managed Starship prompt. AI tools receive
-shared global instructions, the shared `codebase-sweep` skill, and the
-Codex-only `collab` skill without copying authentication or runtime state.
-The TLS import is also an explicit commissioning action because it installs a
-profile-specific public CA and private leaf key. See [local development
-TLS](docs/local-dev-tls.md).
+Interactive Bash sessions use the managed Starship prompt with fzf key bindings
+and completion, zoxide navigation and bat-powered file previews. The common
+toolset also includes fd and ripgrep. AI tools receive shared global
+instructions, the shared `codebase-sweep` skill, and the Codex-only `collab`
+skill without copying authentication or runtime state. The TLS import is also
+an explicit commissioning action because it installs a profile-specific public
+CA and private leaf key. See [local development TLS](docs/local-dev-tls.md).
 
 ## Database workflow
 

@@ -11,6 +11,8 @@ sudo rm -f /etc/dev-machine-cloud-init
 packages_to_remove=(
   7zip
   age
+  bat
+  fd-find
   fzf
   gh
   git-lfs
@@ -20,6 +22,7 @@ packages_to_remove=(
   rclone
   ripgrep
   shellcheck
+  zoxide
 )
 if [ "$DEV_INSTALL_WORK_TOOLS" -eq 0 ]; then
   packages_to_remove+=(azure-cli "${DEV_WORK_APT_PACKAGES[@]}")

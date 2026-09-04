@@ -169,6 +169,8 @@ fi
 
 grep -Eq '^dotnet[[:space:]]*=[[:space:]]*"10"$' config/mise/config.toml
 grep -Eq '^starship[[:space:]]*=[[:space:]]*"latest"$' config/mise/config.toml
+grep -Fq 'fzf --bash' config/shell/dev-machine.sh
+grep -Fq 'zoxide init bash' config/shell/dev-machine.sh
 grep -Fq 'starship init bash' config/shell/dev-machine.sh
 grep -Fq "alias finish-dev='tmux kill-session'" config/shell/dev-machine.sh
 grep -Fq 'config/starship.toml' bootstrap/shell.sh
@@ -210,7 +212,7 @@ if grep -Fq 'dotnet-install.sh' bootstrap/dotnet.sh; then
   exit 1
 fi
 
-for runtime in age fzf git-lfs github-cli go node python ripgrep shellcheck sqlc starship; do
+for runtime in age bat fd fzf git-lfs github-cli go node python ripgrep shellcheck sqlc starship zoxide; do
   grep -Eq "^${runtime}[[:space:]]*=[[:space:]]*\"latest\"$" config/mise/config.toml
 done
 grep -Eq '^rust[[:space:]]*=[[:space:]]*\{ version = "latest", profile = "default" \}$' config/mise/work.toml
@@ -264,7 +266,7 @@ if grep -Eq '^[[:space:]]+pipx[[:space:]\\]*$' bootstrap/work-tools.sh; then
   printf 'Standalone pipx must not be installed with apt.\n' >&2
   exit 1
 fi
-for mise_package in age fzf gh git-lfs ripgrep shellcheck; do
+for mise_package in age bat fd-find fzf gh git-lfs ripgrep shellcheck zoxide; do
   if sed -n '/apt-get install -y \\/,/^$/p' \
     bootstrap/base.sh bootstrap/workstation-tools.sh bootstrap/work-tools.sh \
     | grep -Eq "^[[:space:]]+${mise_package}[[:space:]\\]*$"; then

@@ -45,11 +45,12 @@ also install a mise-owned command with apt, pipx, `go install`, rustup or an
 additional vendor repository.
 
 The common mise configuration manages .NET 10, the latest Go, Node.js and
-Python releases, age, fzf, Git LFS, GitHub CLI, ripgrep, ShellCheck, sqlc and
-Starship. It uses maintained core and Aqua backends and replaces separate
-`nvm`, `pyenv`, `asdf`, Go-manager and standalone CLI update paths. A project `mise.toml`,
-`.nvmrc`, `.node-version`, `.python-version`, `.go-version`, `global.json`, or
-Go toolchain directive can override the global default where supported.
+Python releases, age, bat, fd, fzf, Git LFS, GitHub CLI, ripgrep, ShellCheck,
+sqlc, Starship and zoxide. It uses maintained core and Aqua backends and
+replaces separate `nvm`, `pyenv`, `asdf`, Go-manager and standalone CLI update
+paths. A project `mise.toml`, `.nvmrc`, `.node-version`, `.python-version`,
+`.go-version`, `global.json`, or Go toolchain directive can override the global
+default where supported.
 
 The global defaults deliberately move as new releases appear. Projects needing
 stable or byte-for-byte tool selection should commit exact versions and a mise
@@ -89,6 +90,11 @@ The personal profile removes the provider if it is present.
 The common apt profile installs libpq development files and Ubuntu's
 PostgreSQL client. PostgreSQL is not installed as a Linux server. Common
 standalone developer commands, including age, Git LFS and sqlc, come from mise.
+
+Interactive Bash loads fzf's Ctrl-R history search, Ctrl-T file selection,
+Alt-C directory navigation and fuzzy completion, and enables zoxide's `z` and
+`zi` commands. Ctrl-T uses bat for syntax-highlighted file previews. Ubuntu's
+`bash-completion` package provides command-specific tab completion.
 
 The work profile additionally installs bzip2, FFmpeg, Ghostscript, Pandoc,
 Poppler utilities, qpdf, Redis client tools and WeasyPrint's native Pango and

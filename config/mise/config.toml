@@ -2,7 +2,9 @@ min_version = "2026.9.0"
 
 [tools]
 age = "latest"
+bat = "latest"
 dotnet = "10"
+fd = "latest"
 fzf = "latest"
 git-lfs = "latest"
 github-cli = "latest"
@@ -13,6 +15,7 @@ ripgrep = "latest"
 shellcheck = "latest"
 sqlc = "latest"
 starship = "latest"
+zoxide = "latest"
 
 [settings]
 idiomatic_version_file_enable_tools = ["dotnet", "go", "node", "python"]
