@@ -13,7 +13,7 @@ referee, and sole author of repository changes.
 Prefer explicit selectors in the request:
 
 ```text
-partner=claude model=opus <problem>
+partner=claude model=claude-fable-5-1 <problem>
 partner=grok model=grok-4.6 <problem>
 ```
 
@@ -26,14 +26,17 @@ Apply these rules in order:
    selects Claude; a first token matching `grok-*` selects Grok. Consume it only when problem text
    remains after the token.
 4. Default to Claude when no partner is specified.
+5. Without a model override, use Claude Fable 5.1 (`claude-fable-5-1`) for Claude or
+   Grok 4.6 (`grok-4.6`) for Grok. Pass the default model explicitly rather than inheriting CLI settings.
 
 Do not invoke both partners unless the user explicitly asks for a panel or multiple opinions. Verify
-that `python3` and the selected partner CLI are available. If a dependency is absent, stop and report
-it precisely.
+that `python3`, `git`, and the selected partner CLI are available. If a dependency is absent, stop and
+report it precisely.
 
-Before starting, announce the selected external partner, explain that relevant prompt and repository
-content will be sent to Anthropic or xAI, and resolve the repository root. External calls can incur
-cost and take several minutes.
+Before starting, announce the selected partner and model, and resolve the repository root. A
+collaboration request authorizes the partner calls, their normal usage costs, and sending relevant
+prompt and repository content to Anthropic or xAI. Do not ask for separate confirmation of costs or
+context sharing. Honor any explicit time or cost budget. Calls can take several minutes.
 
 ## Preserve independence and safety
 
@@ -45,11 +48,14 @@ cost and take several minutes.
 - Use one resumable partner session and run its turns sequentially.
 - Keep prompts, raw output, configuration audits, and session IDs outside the repository in a
   directory created with `mktemp -d`.
-- Do not send secrets, credentials, or unrelated private data. The helper gives the partner a
-  temporary snapshot containing only tracked working-tree files, excludes Git metadata, untracked
-  and ignored paths, rejects escaping symlinks and tracked submodules, and scans the prompt and
-  snapshot for common credential shapes. Untracked specifications must be placed in the external
-  scratch prompt rather than exposed through the repository. Use `--skip-secret-scan` only after
+- The helper gives the partner a temporary snapshot of tracked working-tree files, including current
+  edits, plus an independent `.git` containing committed history from HEAD, branches, remote-tracking
+  branches, and tags. Untracked working files (including ignored files), stashes, reflogs, local Git
+  configuration, hooks, and remote URLs are excluded. The snapshot also works with linked Git worktrees.
+- Do not send secrets, credentials, or unrelated private data. The helper scans the prompt and current
+  tracked file contents for common credential shapes and rejects escaping symlinks and tracked
+  submodules. The credential scan does not cover all historical Git objects. Untracked specifications
+  needed for the debate belong in the external scratch prompt. Use `--skip-secret-scan` only after
   showing the detection to the user and receiving explicit authorization. Grok context-only mode
   skips repository snapshot creation and scanning because it sends only the scratch prompt.
 - Do not implement the recommendation unless the user's request separately authorizes implementation.
@@ -98,33 +104,54 @@ The helper applies provider-specific defaults, runs repository tools from its tr
 snapshot, prints a normalized response, preserves raw output and stderr, and reports distinct
 timeout, data, safety, dependency, and provider failures.
 
+### Git history
+
+Partners may inspect history independently through [scripts/git_history.py](scripts/git_history.py).
+The helper supplies the exact invocation and permits these queries from the snapshot root:
+
+- `log [revision] [--limit N] [--path path]`
+- `show [revision] [--path path]`
+- `file revision path`
+- `diff [revision] [target] [--path path]`
+- `blame path [--revision revision]`
+- `branches`
+
+Revisions default to `HEAD`; `diff` without a target compares against the tracked working-tree
+snapshot. The history helper validates revisions and paths, disables external diff and text conversion
+drivers, and accepts no arbitrary Git options or write commands. Partners must use it instead of raw
+Git, shell redirection, pipelines, or compound commands. Codex performs other executable checks.
+
 ### Claude safety
 
-The helper uses Claude's safe and restricted modes with only `Read`, `Grep`, and `Glob`. It removes
-shell and edit tools, disables customizations and MCP configuration, and does not use plan mode.
-Codex performs executable checks.
+The helper uses Claude's safe and restricted modes with `Read`, `Grep`, `Glob`, and `Bash`. It allows
+the history helper through `Bash`, removes edit tools, disables customizations and MCP configuration,
+uses `dontAsk` permissions, and does not use plan mode.
 
 ### Grok safety
 
-The helper defaults to `--grok-safety sandboxed`. It:
+The helper defaults to `--grok-safety tool-restricted`. Use this mode directly without requesting
+confirmation. It:
 
 - audits inherited configuration with `grok inspect --json` and preserves the result beside the raw
   response;
-- uses Grok's read-only sandbox;
-- exposes only `read_file`, `grep`, and `list_dir`;
-- removes shell, edit, web, subagent, memory, and MCP access;
-- uses the supplied read-only partner profile;
-- treats sandbox warnings as failures even when Grok exits successfully.
+- exposes `read_file`, `grep`, `list_dir`, and `run_terminal_cmd`, with an allow rule for the history
+  helper;
+- removes edit, web, subagent, memory, and MCP access;
+- uses the supplied read-only partner profile.
+
+Tool-restricted mode does not request an OS sandbox; inherited hooks and plugin code remain
+unsandboxed.
 
 Grok has no documented per-invocation equivalent to Claude's complete safe mode. Its audit may show
 inherited instructions, skills, plugins, hooks, or MCP definitions. Report that surface as a caveat,
-especially when the debate concerns model or provider choice.
+especially when the debate concerns model or provider choice. Inherited shell allow rules can also
+broaden command permissions beyond the history helper.
 
-If the read-only sandbox cannot be positively enforced, stop. Never retry with weaker protection
-automatically. Explain these explicit fallback choices and wait for the user's authorization:
+Other modes remain available when requested:
 
-- `--grok-safety tool-restricted`: Grok can inspect the repository with read-only built-in tools, but
-  inherited hooks and plugin code remain unsandboxed.
+- `--grok-safety sandboxed`: request Grok's read-only sandbox and treat sandbox warnings as failures
+  even when Grok exits successfully. If the requested sandbox cannot be enforced, stop and report the
+  failure; do not silently change modes.
 - `--grok-safety context-only`: Grok runs from the scratch directory with no built-in repository
   tools and reasons only over the context Codex placed in the prompt. User-level Grok configuration
   and session hooks may still load.

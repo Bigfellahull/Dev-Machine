@@ -7,6 +7,7 @@ import argparse
 import json
 import os
 import re
+import shlex
 import shutil
 import stat
 import subprocess
@@ -21,11 +22,13 @@ from typing import Any, Sequence
 _READ_ONLY_INSTRUCTION = (
     "Act as an independent reasoning partner. Inspect only the supplied working "
     "directory and context. Do not create, edit, move, or delete files; run shell "
-    "commands; invoke subagents, skills, plugins, hooks, MCP tools, memory, or web "
+    "commands except the supplied Git history helper; invoke subagents, skills, "
+    "plugins, hooks, MCP tools, memory, or web "
     "tools; or change repository or external state. Support factual claims with "
     "specific evidence."
 )
 _DEFAULT_TIMEOUTS = {"claude": 600, "grok": 900}
+_DEFAULT_MODELS = {"claude": "claude-fable-5-1", "grok": "grok-4.6"}
 _SECRET_PATTERNS = (
     ("private key", re.compile(r"-----BEGIN [A-Z0-9 ]*PRIVATE KEY-----")),
     ("AWS access key", re.compile(r"\b(?:AKIA|ASIA)[0-9A-Z]{16}\b")),
@@ -106,7 +109,10 @@ def _parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
         dest="resume_session_id",
         help="Partner session ID to resume; --session-id is a compatibility alias",
     )
-    parser.add_argument("--model", help="Optional provider model override")
+    parser.add_argument(
+        "--model",
+        help="Provider model override (defaults: Claude claude-fable-5-1; Grok grok-4.6)",
+    )
     parser.add_argument("--effort", help="Optional provider reasoning effort")
     parser.add_argument(
         "--timeout-seconds",
@@ -127,18 +133,18 @@ def _parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     parser.add_argument(
         "--grok-safety",
         choices=("sandboxed", "tool-restricted", "context-only"),
-        default="sandboxed",
-        help=(
-            "Grok safety mode; weaker modes require explicit user approval in the "
-            "calling workflow"
-        ),
+        default="tool-restricted",
+        help="Grok safety mode (default: tool-restricted; read-only built-in tools)",
     )
     parser.add_argument(
         "--skip-secret-scan",
         action="store_true",
         help="Send a prompt containing a detected credential pattern",
     )
-    return parser.parse_args(argv)
+    args = parser.parse_args(argv)
+    if args.model is None:
+        args.model = _DEFAULT_MODELS[args.provider]
+    return args
 
 
 def _resolve_paths(args: argparse.Namespace) -> _TurnPaths:
@@ -167,18 +173,48 @@ def _find_secret_labels(prompt: str) -> list[str]:
     return [label for label, pattern in _SECRET_PATTERNS if pattern.search(prompt)]
 
 
-def _tracked_repository_paths(repository: Path) -> list[Path]:
-    completed = subprocess.run(
-        ["git", "-C", str(repository), "ls-files", "-z", "--stage"],
-        capture_output=True,
-        check=False,
+def _git_environment() -> dict[str, str]:
+    environment = {
+        key: value for key, value in os.environ.items() if not key.startswith("GIT_")
+    }
+    environment.update(
+        GIT_CONFIG_GLOBAL=os.devnull,
+        GIT_CONFIG_NOSYSTEM="1",
+        GIT_TERMINAL_PROMPT="0",
+        GIT_NO_REPLACE_OBJECTS="1",
+        GIT_OPTIONAL_LOCKS="0",
     )
-    if completed.returncode != 0:
+    return environment
+
+
+def _run_git(
+    repository: Path, *arguments: str, check: bool = True
+) -> subprocess.CompletedProcess[bytes]:
+    try:
+        completed = subprocess.run(
+            [
+                "git", "--no-pager",
+                "-c", f"core.hooksPath={os.devnull}",
+                "-c", "core.fsmonitor=false",
+                "-C", str(repository), *arguments,
+            ],
+            env=_git_environment(),
+            capture_output=True,
+            check=False,
+        )
+    except FileNotFoundError as error:
+        raise _PartnerError("git executable not found on PATH", exit_code=127) from error
+    if check and completed.returncode != 0:
         detail = completed.stderr.decode("utf-8", errors="replace").strip()
         raise _PartnerError(
-            f"could not enumerate tracked repository files: {detail or 'git failed'}",
+            f"Git operation failed: {detail or 'git failed'}",
             exit_code=69,
         )
+    return completed
+
+
+def _tracked_repository_paths(repository: Path) -> list[Path]:
+    completed = _run_git(repository, "ls-files", "-z", "--stage")
 
     paths = []
     for index_record in completed.stdout.split(b"\0"):
@@ -236,6 +272,25 @@ def _snapshot_secret_labels(snapshot: Path) -> list[str]:
     return sorted(labels)
 
 
+def _copy_git_history(repository: Path, snapshot: Path) -> None:
+    # Transport cloning excludes local-only objects such as stashed untracked files.
+    _run_git(
+        repository,
+        "clone", "--bare", "--no-local", "--template=", "--quiet",
+        "--", str(repository), str(snapshot / ".git"),
+    )
+    _run_git(
+        snapshot, "fetch", "--quiet", "--no-tags", "--no-write-fetch-head",
+        str(repository), "+refs/remotes/*:refs/remotes/*",
+    )
+    _run_git(snapshot, "config", "--local", "core.bare", "false")
+    _run_git(snapshot, "config", "--local", "--remove-section", "remote.origin")
+    head = _run_git(snapshot, "rev-parse", "--verify", "--quiet", "HEAD", check=False)
+    _run_git(snapshot, "read-tree", "HEAD" if head.returncode == 0 else "--empty")
+    _run_git(snapshot, "add", "--intent-to-add", "--all", "--force")
+    (snapshot / ".git" / "collab-snapshot").write_text("1\n", encoding="utf-8")
+
+
 def _create_repository_snapshot(
     repository: Path,
 ) -> tuple[tempfile.TemporaryDirectory[str], Path, list[str]]:
@@ -279,7 +334,9 @@ def _create_repository_snapshot(
         for destination, link_target in symlinks:
             destination.parent.mkdir(parents=True, exist_ok=True)
             destination.symlink_to(link_target)
-        return temporary_directory, snapshot, _snapshot_secret_labels(snapshot)
+        secret_labels = _snapshot_secret_labels(snapshot)
+        _copy_git_history(repository, snapshot)
+        return temporary_directory, snapshot, secret_labels
     except Exception:
         temporary_directory.cleanup()
         raise
@@ -319,6 +376,27 @@ def _require_flags(provider: str, help_text: str, flags: Sequence[str]) -> None:
         )
 
 
+def _history_command() -> str:
+    script = Path(__file__).resolve().with_name("git_history.py")
+    return shlex.join([sys.executable, "-B", str(script)])
+
+
+def _partner_instruction(history_access: bool = True) -> str:
+    if not history_access:
+        return _READ_ONLY_INSTRUCTION + " No Git history helper is available in this mode."
+    return (
+        _READ_ONLY_INSTRUCTION
+        + " The working directory contains tracked working-tree files and isolated Git "
+        "history. For read-only history queries, run "
+        + _history_command()
+        + " from the snapshot root, followed by: log [revision] [--limit N] [--path path]; "
+        "show [revision] [--path path]; file revision path; diff [revision] [target] "
+        "[--path path]; blame path [--revision revision]; or branches. Use the helper "
+        "instead of raw git commands. Do not use shell redirection, pipelines, or "
+        "compound commands. Other executable checks must be requested from Codex."
+    )
+
+
 def _build_claude_command(
     executable: str, args: argparse.Namespace
 ) -> list[str]:
@@ -333,11 +411,13 @@ def _build_claude_command(
         "--permission-mode",
         "dontAsk",
         "--tools",
-        "Read,Grep,Glob",
+        "Read,Grep,Glob,Bash",
+        "--allowedTools",
+        f"Bash({_history_command()} *)",
         "--disallowedTools",
-        "Edit,Write,NotebookEdit,Bash",
+        "Edit,Write,NotebookEdit",
         "--append-system-prompt",
-        _READ_ONLY_INSTRUCTION,
+        _partner_instruction(),
     ]
     if args.resume_session_id:
         command.extend(("--resume", args.resume_session_id))
@@ -370,7 +450,7 @@ def _build_grok_command(
             )
         command.extend(("-p", prompt))
 
-    tools = "" if args.grok_safety == "context-only" else "read_file,grep,list_dir"
+    tools = "" if args.grok_safety == "context-only" else "read_file,grep,list_dir,run_terminal_cmd"
     agent_profile = Path(__file__).resolve().parent.parent / "agents" / "grok-partner.md"
     command.extend(
         (
@@ -383,7 +463,7 @@ def _build_grok_command(
             "--tools",
             tools,
             "--disallowed-tools",
-            "search_replace,run_terminal_cmd,Agent",
+            "search_replace,Agent" if tools else "search_replace,run_terminal_cmd,Agent",
             "--disable-web-search",
             "--no-subagents",
             "--deny",
@@ -391,13 +471,14 @@ def _build_grok_command(
             "--agent",
             str(agent_profile),
             "--rules",
-            _READ_ONLY_INSTRUCTION,
+            _partner_instruction(history_access=bool(tools)),
             "--max-turns",
             str(args.grok_max_turns),
         )
     )
     if tools:
         command.extend(("--allow", "Read", "--allow", "Grep"))
+        command.extend(("--allow", f"Bash({_history_command()} *)"))
     if args.grok_safety == "sandboxed":
         command.extend(("--sandbox", "read-only"))
     if args.resume_session_id:
@@ -571,6 +652,7 @@ def _run_partner(
                 "--restricted",
                 "--strict-mcp-config",
                 "--tools",
+                "--allowedTools",
                 "--disallowedTools",
                 "--permission-mode",
             ),
@@ -722,7 +804,7 @@ def _run(args: argparse.Namespace) -> dict[str, Any]:
             args,
             snapshot_paths,
             prompt,
-            repository_scope="tracked-working-tree-snapshot",
+            repository_scope="tracked-working-tree-and-git-history-snapshot",
         )
     finally:
         snapshot_directory.cleanup()
