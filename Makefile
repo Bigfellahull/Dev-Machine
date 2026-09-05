@@ -7,7 +7,7 @@ test:
 	./tests/test-db.sh
 	./tests/test-local-dev-tls.sh
 	./tests/test-verify.sh
-	PYTHONDONTWRITEBYTECODE=1 python3 -m unittest config/ai/skills/collab/tests/test_partner_turn.py
+	PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s config/ai/skills/collab/tests
 	./tests/test-static.sh
 
 lint:

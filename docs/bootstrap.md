@@ -145,11 +145,17 @@ plugins and MCP configuration. The files contain no authentication state;
 credentials remain separate for every machine and profile.
 
 Global AI instructions and the approved skill trees are managed on every run.
-`codebase-sweep` has one canonical copy under `~/.agents/skills`; Claude points
-to it through `~/.claude/skills/codebase-sweep`, while Grok and Codex discover
-the shared location directly. `collab` is installed only for Codex under
-`~/.codex/skills/collab`. No plugin registry, remembered approval, project
-trust, hook, history or authentication state is copied.
+`codebase-sweep` and `collab` each have one canonical copy under
+`~/.agents/skills`, with symlinks from `~/.claude/skills` and `~/.codex/skills`.
+Grok discovers the shared location directly. Bootstrap moves an existing
+Codex-owned `collab` directory to the shared location and updates its known
+links; conflicting directories or unexpected links are left untouched and
+reported as errors. The default `collab` panel is Claude, Grok,
+and Codex, with whichever participating agent you are talking to as lead.
+Each forms an independent position from a neutral brief before the panel
+shares proposals and debates verified evidence. No plugin registry,
+remembered approval, project trust, hook, history or authentication state
+is copied.
 
 Claude follows the terminal appearance automatically, Grok minimal mode uses
 the terminal palette, and Codex leaves its independent syntax-highlighting

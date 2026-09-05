@@ -202,14 +202,19 @@ else
     "shared codebase-sweep skill is current"
   check_managed_directory \
     "$DEV_MACHINE_ROOT/config/ai/skills/collab" \
-    "$HOME/.codex/skills/collab" \
-    "Codex collab skill is current"
-  if [ -L "$HOME/.claude/skills/codebase-sweep" ] \
-    && [ "$(readlink "$HOME/.claude/skills/codebase-sweep")" = '../../.agents/skills/codebase-sweep' ]; then
-    pass "Claude uses the shared codebase-sweep skill"
-  else
-    fail "Claude codebase-sweep skill link is missing or incorrect"
-  fi
+    "$HOME/.agents/skills/collab" \
+    "shared collab skill is current"
+  for skill_host in .claude .codex; do
+    for skill_name in codebase-sweep collab; do
+      skill_link="$HOME/$skill_host/skills/$skill_name"
+      if [ -L "$skill_link" ] \
+        && [ "$(readlink "$skill_link")" = "../../.agents/skills/$skill_name" ]; then
+        pass "$skill_name skill link is current: $skill_link"
+      else
+        fail "$skill_name skill link is missing or incorrect: $skill_link"
+      fi
+    done
+  done
 fi
 
 command -v git >/dev/null 2>&1 && check_version git git --version

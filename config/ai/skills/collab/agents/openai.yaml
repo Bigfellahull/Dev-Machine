@@ -1,4 +1,4 @@
 interface:
   display_name: "Collaborate Across Models"
-  short_description: "Debate with Claude or Grok and converge"
-  default_prompt: "Use $collab to debate this problem with an independent Claude or Grok partner and report the evidence-backed verdict."
+  short_description: "Blind opening, then Claude–Grok–Codex debate"
+  default_prompt: "Use $collab to convene Claude, Grok, and Codex, form independent positions from a neutral brief, then debate the evidence toward a shared final plan."

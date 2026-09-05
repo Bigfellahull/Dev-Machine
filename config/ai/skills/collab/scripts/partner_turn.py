@@ -27,8 +27,10 @@ _READ_ONLY_INSTRUCTION = (
     "tools; or change repository or external state. Support factual claims with "
     "specific evidence."
 )
-_DEFAULT_TIMEOUTS = {"claude": 600, "grok": 900}
-_DEFAULT_MODELS = {"claude": "claude-fable-5-1", "grok": "grok-4.6"}
+_DEFAULT_TIMEOUTS = {"claude": 600, "grok": 900, "codex": 900}
+_DEFAULT_MODELS = {
+    "claude": "claude-fable-5-1", "grok": "grok-4.6", "codex": "gpt-6-astra"
+}
 _SECRET_PATTERNS = (
     ("private key", re.compile(r"-----BEGIN [A-Z0-9 ]*PRIVATE KEY-----")),
     ("AWS access key", re.compile(r"\b(?:AKIA|ASIA)[0-9A-Z]{16}\b")),
@@ -98,7 +100,7 @@ def _parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
         description="Run one resumable, read-only partner turn."
     )
     parser.add_argument(
-        "--provider", choices=("claude", "grok"), default="claude"
+        "--provider", choices=("claude", "grok", "codex"), default="claude"
     )
     parser.add_argument("--cwd", required=True, type=Path, help="Repository root")
     parser.add_argument("--prompt-file", required=True, type=Path)
@@ -111,13 +113,13 @@ def _parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     )
     parser.add_argument(
         "--model",
-        help="Provider model override (defaults: Claude claude-fable-5-1; Grok grok-4.6)",
+        help="Provider model override (defaults: Claude claude-fable-5-1; Grok grok-4.6; Codex gpt-6-astra)",
     )
     parser.add_argument("--effort", help="Optional provider reasoning effort")
     parser.add_argument(
         "--timeout-seconds",
         type=_positive_int,
-        help="Maximum turn duration; defaults to 600 for Claude and 900 for Grok",
+        help="Maximum turn duration; defaults to 600 for Claude and 900 for Grok/Codex",
     )
     parser.add_argument(
         "--max-budget-usd",
@@ -142,6 +144,8 @@ def _parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
         help="Send a prompt containing a detected credential pattern",
     )
     args = parser.parse_args(argv)
+    if args.max_budget_usd is not None and args.provider != "claude":
+        parser.error("--max-budget-usd is supported only by Claude")
     if args.model is None:
         args.model = _DEFAULT_MODELS[args.provider]
     return args
@@ -342,10 +346,10 @@ def _create_repository_snapshot(
         raise
 
 
-def _read_cli_help(executable: str, cwd: Path) -> str:
+def _read_cli_help(executable: str, cwd: Path, *subcommands: str) -> str:
     try:
         completed = subprocess.run(
-            [executable, "--help"],
+            [executable, *subcommands, "--help"],
             cwd=cwd,
             text=True,
             capture_output=True,
@@ -393,7 +397,7 @@ def _partner_instruction(history_access: bool = True) -> str:
         "show [revision] [--path path]; file revision path; diff [revision] [target] "
         "[--path path]; blame path [--revision revision]; or branches. Use the helper "
         "instead of raw git commands. Do not use shell redirection, pipelines, or "
-        "compound commands. Other executable checks must be requested from Codex."
+        "compound commands. Other executable checks must be requested from the lead agent."
     )
 
 
@@ -428,6 +432,83 @@ def _build_claude_command(
     if args.max_budget_usd is not None:
         command.extend(("--max-budget-usd", str(args.max_budget_usd)))
     return command
+
+
+def _build_codex_command(
+    executable: str, args: argparse.Namespace, cwd: Path
+) -> list[str]:
+    instruction = _partner_instruction().replace(
+        "commands except the supplied Git history helper",
+        "commands except read-only file inspection and the supplied Git history helper",
+    )
+    command = [
+        executable, "exec", "--json", "--color", "never",
+        "--sandbox", "read-only", "--cd", str(cwd),
+        "--ignore-user-config", "--ignore-rules", "--strict-config",
+    ]
+    settings = {
+        "approval_policy": "never",
+        "web_search": "disabled",
+        "project_doc_max_bytes": 0,
+        "agents.enabled": False,
+        "features.apps": False,
+        "features.plugins": False,
+        "features.hooks": False,
+        "features.memories": False,
+        "features.browser_use": False,
+        "features.computer_use": False,
+        "features.shell_snapshot": False,
+        "allow_login_shell": False,
+        "shell_environment_policy.inherit": "core",
+        "shell_environment_policy.ignore_default_excludes": False,
+        "developer_instructions": instruction,
+    }
+    for key, value in settings.items():
+        command.extend(("--config", f"{key}={json.dumps(value)}"))
+    if args.model:
+        command.extend(("--model", args.model))
+    if args.effort:
+        command.extend(("--config", f"model_reasoning_effort={json.dumps(args.effort)}"))
+    if args.resume_session_id:
+        command.extend(("resume", args.resume_session_id))
+    command.append("-")
+    return command
+
+
+def _parse_codex_response(stdout: str, requested_model: str | None) -> _PartnerResponse:
+    session_id = None
+    answer = None
+    usage = None
+    completed = False
+    for line in stdout.splitlines():
+        if not line.strip():
+            continue
+        try:
+            event = json.loads(line)
+        except json.JSONDecodeError as error:
+            raise _PartnerError(f"codex returned invalid JSONL: {error}", exit_code=65) from error
+        if not isinstance(event, dict):
+            raise _PartnerError("codex event must be a JSON object", exit_code=65)
+        kind = event.get("type")
+        if kind in ("error", "turn.failed"):
+            detail = event.get("error") or event.get("message") or "no error detail"
+            raise _PartnerError(f"codex reported an error: {detail}", exit_code=69)
+        if kind == "thread.started":
+            session_id = event.get("thread_id")
+        elif kind == "item.completed":
+            item = event.get("item")
+            if isinstance(item, dict) and item.get("type") == "agent_message":
+                answer = item.get("text")
+        elif kind == "turn.completed":
+            completed = True
+            usage = event.get("usage")
+    if not completed:
+        raise _PartnerError("codex stream did not complete its turn", exit_code=65)
+    return _parse_partner_response(
+        "codex",
+        {"sessionId": session_id, "text": answer, "usage": usage, "stopReason": "completed"},
+        requested_model,
+    )
 
 
 def _build_grok_command(
@@ -593,7 +674,7 @@ def _parse_partner_response(
         raise _PartnerError(
             f"{provider} response did not contain a session ID", exit_code=65
         )
-    if not isinstance(answer, str):
+    if not isinstance(answer, str) or not answer.strip():
         raise _PartnerError(
             f"{provider} response did not contain textual output", exit_code=65
         )
@@ -615,6 +696,18 @@ def _parse_partner_response(
 def _failure_detail(
     provider: str, stdout: str, stderr: str, returncode: int
 ) -> str:
+    if provider == "codex":
+        for line in reversed(stdout.splitlines()):
+            try:
+                event = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            if isinstance(event, dict) and event.get("type") in ("error", "turn.failed"):
+                detail = event.get("error") or event.get("message")
+                if isinstance(detail, dict):
+                    detail = detail.get("message")
+                if isinstance(detail, str) and detail.strip():
+                    return detail.strip()
     try:
         response = json.loads(stdout)
     except json.JSONDecodeError:
@@ -640,8 +733,12 @@ def _run_partner(
         raise _PartnerError(
             f"{args.provider} executable not found on PATH", exit_code=127
         )
-    help_text = _read_cli_help(executable, paths.cwd)
+    subcommands = ("exec",) if args.provider == "codex" else ()
+    help_text = _read_cli_help(executable, paths.cwd, *subcommands)
     preflight_file: Path | None = None
+    execution_cwd = paths.cwd
+    environment = None
+    process_input = prompt
 
     if args.provider == "claude":
         _require_flags(
@@ -658,9 +755,12 @@ def _run_partner(
             ),
         )
         command = _build_claude_command(executable, args)
-        execution_cwd = paths.cwd
-        environment = None
-        process_input = prompt
+    elif args.provider == "codex":
+        _require_flags(
+            "codex exec", help_text,
+            ("--json", "--sandbox", "--cd", "--ignore-user-config", "--ignore-rules", "--strict-config"),
+        )
+        command = _build_codex_command(executable, args, paths.cwd)
     else:
         _require_flags(
             "grok",
@@ -715,13 +815,12 @@ def _run_partner(
     paths.output.write_text(completed.stdout, encoding="utf-8")
     paths.stderr.write_text(completed.stderr, encoding="utf-8")
 
-    if (
-        args.provider == "grok"
-        and args.grok_safety == "sandboxed"
-        and _has_sandbox_failure(completed.stderr)
-    ):
+    requires_sandbox = args.provider == "codex" or (
+        args.provider == "grok" and args.grok_safety == "sandboxed"
+    )
+    if requires_sandbox and _has_sandbox_failure(completed.stderr):
         raise _PartnerError(
-            "Grok's read-only sandbox was not applied; refusing to continue with "
+            f"{args.provider}'s read-only sandbox was not applied; refusing to continue with "
             "weaker protections",
             exit_code=77,
         )
@@ -734,13 +833,16 @@ def _run_partner(
             exit_code=69,
         )
 
-    try:
-        response = json.loads(completed.stdout)
-    except json.JSONDecodeError as error:
-        raise _PartnerError(
-            f"{args.provider} returned invalid JSON: {error}", exit_code=65
-        ) from error
-    parsed = _parse_partner_response(args.provider, response, args.model)
+    if args.provider == "codex":
+        parsed = _parse_codex_response(completed.stdout, args.model)
+    else:
+        try:
+            response = json.loads(completed.stdout)
+        except json.JSONDecodeError as error:
+            raise _PartnerError(
+                f"{args.provider} returned invalid JSON: {error}", exit_code=65
+            ) from error
+        parsed = _parse_partner_response(args.provider, response, args.model)
     return {
         "provider": parsed.provider,
         "model": parsed.model,
@@ -750,9 +852,11 @@ def _run_partner(
         "stop_reason": parsed.stop_reason,
         "usage": parsed.usage,
         "cost_usd": parsed.cost_usd,
-        "safety_mode": "isolated-read-only"
-        if args.provider == "claude"
-        else args.grok_safety,
+        "safety_mode": {
+            "claude": "isolated-read-only",
+            "codex": "sandboxed-read-only",
+            "grok": args.grok_safety,
+        }[args.provider],
         "repository_scope": repository_scope,
         "raw_output_file": str(paths.output),
         "stderr_file": str(paths.stderr),

@@ -51,6 +51,38 @@ install_skill_symlink() {
   ln -s "$link_target" "$link_path"
 }
 
+# Preserve the installed skill while reversing the former Codex-owned layout.
+migrate_collab_skill() {
+  local skill_home=$1
+  local legacy_directory="$skill_home/.codex/skills/collab"
+  local shared_directory="$skill_home/.agents/skills/collab"
+  local claude_link="$skill_home/.claude/skills/collab"
+  local skill_link
+
+  [ -d "$legacy_directory" ] && [ ! -L "$legacy_directory" ] || return 0
+
+  for skill_link in "$shared_directory" "$claude_link"; do
+    if [ -L "$skill_link" ]; then
+      case "$(readlink "$skill_link")" in
+        '../../.codex/skills/collab'|"$legacy_directory") ;;
+        *) die "Refusing to migrate unexpected skill symlink: $skill_link" ;;
+      esac
+    elif [ -e "$skill_link" ]; then
+      die "Refusing to migrate over existing skill path: $skill_link"
+    fi
+  done
+
+  mkdir -p "$(dirname "$shared_directory")"
+  if [ -L "$shared_directory" ]; then
+    rm "$shared_directory"
+  fi
+  mv "$legacy_directory" "$shared_directory"
+  ln -s '../../.agents/skills/collab' "$legacy_directory"
+  if [ -L "$claude_link" ]; then
+    ln -sfn '../../.agents/skills/collab' "$claude_link"
+  fi
+}
+
 # Authentication and provider credentials are intentionally not handled here.
 install_native_cli codex https://chatgpt.com/codex/install.sh
 install_native_cli claude https://claude.ai/install.sh
@@ -75,6 +107,7 @@ install_user_file_if_missing \
   0600
 
 log "Installing managed AI instructions and skills"
+migrate_collab_skill "$HOME"
 install_user_file \
   "$DEV_MACHINE_ROOT/config/ai/AGENTS.md" \
   "$HOME/.codex/AGENTS.md"
@@ -89,7 +122,12 @@ install_managed_skill \
   "$HOME/.agents/skills/codebase-sweep"
 install_managed_skill \
   "$DEV_MACHINE_ROOT/config/ai/skills/collab" \
-  "$HOME/.codex/skills/collab"
-install_skill_symlink \
-  '../../.agents/skills/codebase-sweep' \
-  "$HOME/.claude/skills/codebase-sweep"
+  "$HOME/.agents/skills/collab"
+for skill_host in .claude .codex; do
+  install_skill_symlink \
+    '../../.agents/skills/codebase-sweep' \
+    "$HOME/$skill_host/skills/codebase-sweep"
+  install_skill_symlink \
+    '../../.agents/skills/collab' \
+    "$HOME/$skill_host/skills/collab"
+done
