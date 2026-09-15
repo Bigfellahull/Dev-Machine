@@ -35,9 +35,9 @@ password.
 
 ## Import
 
-First export a handoff from the matching mini by following the `mac-bootstrap`
-local TLS guide. Transfer it to an exact temporary directory inside the VM,
-then run:
+First export a handoff from the matching mini by following the
+[Mac-Bootstrap TLS guide](https://github.com/Bigfellahull/Mac-Bootstrap/blob/main/docs/local-dev-tls.md).
+Transfer it to an exact temporary directory inside the VM, then run:
 
 ```bash
 local-dev-tls import /path/to/local-dev-tls-handoff
@@ -118,15 +118,36 @@ npx next dev \
   --experimental-https-key "$tls_dir/localhost-key.pem" \
   --experimental-https-cert "$tls_dir/localhost.pem" \
   --experimental-https-ca "$tls_dir/root-ca.pem" \
-  --hostname app.dev.localhost
+  --hostname 127.0.0.1
 ```
 
 `NODE_EXTRA_CA_CERTS` also lets Node trust local services signed by the shared
 CA. Keep it command-scoped. Browser trust comes from the public root installed
 on the browser machine, not from this Node setting.
 
+Binding to `127.0.0.1` avoids requiring Ubuntu to resolve a custom
+`.localhost` name just to start the server. Use the browser forwarding steps
+below when accessing it from the Air.
+
 Next.js labels these HTTPS flags experimental, so project wrappers should be
 tested when upgrading Next.js.
+
+## Browsing from the Air
+
+The certificate's `.localhost` names refer to loopback; they do not route the
+Air to a VM. Once the [SSH alias](remote-access.md) is commissioned, forward the
+project's HTTPS port from the Air. For a service listening on the VM's IPv4
+loopback port 3000:
+
+```bash
+ssh -N -o ExitOnForwardFailure=yes -L 127.0.0.1:3000:127.0.0.1:3000 work-dev
+```
+
+Keep that SSH session open and browse to `https://localhost:3000` on the Air.
+Use `personal-dev` for personal, and adjust the port and forwarding destination
+to match the server's listener. The Air must trust the matching public root.
+For name-based virtual hosts, use the project's covered `.localhost` name and
+check that it resolves to the address used by the local forward.
 
 ## Containers and OrbStack
 

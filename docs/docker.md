@@ -22,9 +22,13 @@ Docker administration from Ubuntu is a different path:
 db -> mac docker compose -> macOS Docker CLI -> OrbStack Docker engine
 ```
 
-There is no nested daemon and no invented socket. `bootstrap/docker-bridge.sh`
+There is no nested daemon. `bootstrap/docker-bridge.sh`
 uses OrbStack's supported `mac link docker` only when a Linux `docker` command is
 absent. The `db` helper remains explicit and calls `mac docker` itself.
+
+Work applications that consume the Docker API directly can use the separately
+commissioned [Docker API tunnel](docker-api.md). Its endpoint is scoped to the
+application command and does not change the database helper's command bridge.
 
 ## First use
 
@@ -32,15 +36,18 @@ Inside Ubuntu, create a private credentials file:
 
 ```bash
 mkdir -p ~/.config/dev-machine
-cp ~/code/dev-machine/docker/db.env.example ~/.config/dev-machine/db.env
+if [ ! -e ~/.config/dev-machine/db.env ]; then
+  cp ~/code/dev-machine/docker/db.env.example ~/.config/dev-machine/db.env
+fi
 chmod 600 ~/.config/dev-machine/db.env
 ```
 
-Replace every placeholder. The file is ignored and must never be committed.
+Replace the placeholders for the engines you use. The file lives outside the
+repository and must never be committed.
 The personal profile enables PostgreSQL only, so its SQL Server and Redis
 placeholder values are unused. The work profile enables all three engines.
 For multiple concurrently running projects, use separate files with unique
-published ports:
+published ports. Create and edit both private files before running:
 
 ```bash
 db start postgres --project project-a --env-file ~/.config/dev-machine/project-a-db.env
@@ -57,6 +64,11 @@ Compose project named `PROJECT-postgres`; the other engines use analogous names.
 Each engine therefore has its own container and named data volume. Image layers
 and build cache remain shared in OrbStack.
 
+The scope does not include the VM name. A clone using the same project name on
+the same Mac targets the same database scope. Use a distinct `--project` and
+private port configuration for an experiment that needs independent data.
+Different Git roots with the same basename also need explicit distinct names.
+
 `db --help` lists the engines installed for the current machine. Personal
 machines expose only PostgreSQL. Work machines additionally expose SQL Server
 and Redis, and `db status` checks only the enabled set. Reprovisioning removes
@@ -67,7 +79,8 @@ removes the corresponding macOS Docker volumes.
 `PROJECT-ENGINE` scope and requires confirmation. It does not remove shared
 images or another project's data.
 
-Useful commands:
+Run these commands from the same project directory, repeating any custom
+`--project` and `--env-file` options used when starting it:
 
 ```bash
 db status

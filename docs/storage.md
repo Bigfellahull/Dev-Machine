@@ -48,8 +48,8 @@ OrbStack Docker volume for active work. This preserves internal latency and
 makes the external asset portable.
 
 When an internal restore is impractical, test an external bind-backed volume
-with a representative workload. Record latency, throughput, fsync-heavy behavior
-and failure behavior on disconnect. Do not make an external-backed active volume
+with a representative workload. Record latency, throughput, fsync-heavy behaviour
+and failure behaviour on disconnect. Do not make an external-backed active volume
 the default based only on sequential benchmark speed.
 
 ## Exports
@@ -63,5 +63,10 @@ scripts/backup/export-machine.sh work
 The script writes a timestamped export and matching `.manifest` under the
 required external volume. The manifest binds the archive digest, source profile,
 machine, distribution and architecture. Imports reject missing, modified,
-renamed or cross-profile artifacts. Exports are convenience artifacts, not a
-replacement for remote Git repositories or explicit database backups.
+renamed or cross-profile artefacts. The manifest is a consistency check, not a
+signed proof of origin; import only archives and manifests from a trusted source.
+
+Exports contain the VM's private state, including credentials and keys. Store
+them with access restricted to the matching profile. They exclude the separate
+macOS Docker volumes and are not a replacement for remote Git repositories or
+explicit database backups.

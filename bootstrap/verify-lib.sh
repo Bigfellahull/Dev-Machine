@@ -14,3 +14,12 @@ sqlcmd_version() {
   [ -n "$parsed_version" ] || return 1
   printf '%s\n' "$parsed_version"
 }
+
+# Check the concrete encoders used by the work media pipeline.
+ffmpeg_encoders_available() {
+  local encoders encoder
+  encoders=$(ffmpeg -hide_banner -encoders 2>/dev/null) || return 1
+  for encoder in png mjpeg libvpx libvpx-vp9 libvorbis libmp3lame; do
+    printf '%s\n' "$encoders" | awk '{print $2}' | grep -Fxq "$encoder" || return 1
+  done
+}

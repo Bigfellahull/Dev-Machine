@@ -80,6 +80,7 @@ fi
 if [ "$DEV_INSTALL_WORK_TOOLS" -eq 1 ]; then
   "$SCRIPT_DIR/work-tools.sh"
 fi
+"$SCRIPT_DIR/ocr.sh"
 
 if [ "$skip_ai" -eq 0 ] && [ "$DEV_INSTALL_AI_TOOLS" -eq 1 ]; then
   "$SCRIPT_DIR/ai-tools.sh"

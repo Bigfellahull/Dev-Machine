@@ -152,10 +152,14 @@ if [ "$profile" = work ]; then
     redis-cli
     rustc
     sqlcmd
+    sqlpackage
     syft
     uv
     weasyprint
+    tesseract
   )
+elif [ "$profile" = personal ]; then
+  required_commands+=(railway)
 fi
 
 for command_name in "${required_commands[@]}"; do
@@ -204,8 +208,16 @@ else
     "$DEV_MACHINE_ROOT/config/ai/skills/collab" \
     "$HOME/.agents/skills/collab" \
     "shared collab skill is current"
+  managed_skills=(codebase-sweep collab)
+  if [ "$profile" = personal ]; then
+    managed_skills+=(use-railway)
+    check_managed_directory \
+      "$DEV_MACHINE_ROOT/config/ai/skills/use-railway" \
+      "$HOME/.agents/skills/use-railway" \
+      "personal Railway skill is current"
+  fi
   for skill_host in .claude .codex; do
-    for skill_name in codebase-sweep collab; do
+    for skill_name in "${managed_skills[@]}"; do
       skill_link="$HOME/$skill_host/skills/$skill_name"
       if [ -L "$skill_link" ] \
         && [ "$(readlink "$skill_link")" = "../../.agents/skills/$skill_name" ]; then
@@ -239,10 +251,29 @@ if [ "$profile" = work ]; then
   command -v az >/dev/null 2>&1 \
     && check_version az az version --query '"azure-cli"' --output tsv
   command -v sqlcmd >/dev/null 2>&1 && check_version sqlcmd sqlcmd_version
+  command -v sqlpackage >/dev/null 2>&1 && check_version sqlpackage sqlpackage /Version
   command -v syft >/dev/null 2>&1 && check_version syft syft version
   command -v uv >/dev/null 2>&1 && check_version uv uv --version
   command -v weasyprint >/dev/null 2>&1 \
     && check_version weasyprint weasyprint --version
+  if [ "$(capture_version tesseract --version)" = 'tesseract 5.5.2' ]; then
+    pass "Tesseract 5.5.2 is installed"
+  else
+    fail "Tesseract does not match the pinned OCR runtime"
+  fi
+  if timeout 10 tesseract --list-langs 2>/dev/null | grep -Fxq eng; then
+    pass "Tesseract English language data is available"
+  else
+    fail "Tesseract English language data is missing"
+  fi
+  check_version pdfminer.six /usr/bin/python3 -c 'import pdfminer; print(pdfminer.__version__)'
+  if ffmpeg_encoders_available; then
+    pass "FFmpeg provides the required PNG, MJPEG, VPX, Vorbis and LAME encoders"
+  else
+    fail "FFmpeg is missing required media encoders"
+  fi
+elif [ "$profile" = personal ]; then
+  command -v railway >/dev/null 2>&1 && check_version railway railway --version
 fi
 if [ "$skip_ai" -eq 0 ]; then
   command -v codex >/dev/null 2>&1 && check_version codex codex --version
@@ -342,6 +373,25 @@ else
   pass "work-only mise configuration is absent from the personal profile"
 fi
 
+personal_mise_config="$HOME/.config/mise/conf.d/dev-machine-personal.toml"
+if [ "$profile" = personal ]; then
+  check_managed_file "$DEV_MACHINE_ROOT/config/mise/personal.toml" "$personal_mise_config" \
+    "personal-only mise configuration is current"
+elif [ -e "$personal_mise_config" ]; then
+  fail "personal-only mise configuration is installed outside the personal profile"
+fi
+if [ "$profile" = work ]; then
+  if command -v railway >/dev/null 2>&1; then
+    fail "Railway is installed outside the personal profile"
+  fi
+  for skill_host in .agents .claude .codex; do
+    skill_path="$HOME/$skill_host/skills/use-railway"
+    if [ -e "$skill_path" ] || [ -L "$skill_path" ]; then
+      fail "Railway skill is installed outside the personal profile: $skill_path"
+    fi
+  done
+fi
+
 if git config --global --get-regexp '^filter\.lfs\.' >/dev/null 2>&1; then
   pass "Git LFS filters are configured"
 else
@@ -388,11 +438,20 @@ for database_engine in postgres mssql redis; do
 done
 
 if [ "$profile" = personal ]; then
-  for work_only_command in az cargo ffmpeg gs pandoc pdftotext qpdf redis-cli rustc sqlcmd syft uv weasyprint; do
+  for work_only_command in az cargo ffmpeg gs pandoc pdftotext qpdf redis-cli rustc sqlcmd sqlpackage syft tesseract uv weasyprint orbstack-docker-api; do
     if command -v "$work_only_command" >/dev/null 2>&1; then
       fail "$work_only_command is installed outside the work profile"
     else
       pass "$work_only_command is absent from the personal profile"
+    fi
+  done
+  if /usr/bin/python3 -c 'import pdfminer' >/dev/null 2>&1; then
+    fail "pdfminer.six is installed outside the work profile"
+  fi
+  for work_state in "$HOME/.config/systemd/user/dev-machine-docker-api.service" \
+    "$HOME/.config/dev-machine/docker-api" "$HOME/.local/share/dev-machine/tesseract"; do
+    if [ -e "$work_state" ] || [ -L "$work_state" ]; then
+      fail "Work-only runtime state remains on personal: $work_state"
     fi
   done
 fi
@@ -413,6 +472,20 @@ fi
 
 if command -v mac >/dev/null 2>&1; then
   pass "OrbStack macOS command bridge is available"
+  if [ "$profile" = work ]; then
+    check_command orbstack-docker-api
+    check_managed_file "$DEV_MACHINE_ROOT/config/systemd/dev-machine-docker-api.service" \
+      "$HOME/.config/systemd/user/dev-machine-docker-api.service" "work Docker API service is current"
+    if [ -d "$HOME/.config/dev-machine/docker-api" ]; then
+      if orbstack-docker-api verify; then
+        pass "work Docker API tunnel responds"
+      else
+        fail "work Docker API tunnel is not usable"
+      fi
+    else
+      verify_warn "work Docker API tunnel is not commissioned; see docs/docker-api.md"
+    fi
+  fi
   if mac docker version >/dev/null 2>&1; then
     pass "OrbStack host Docker is reachable through 'mac docker'"
   else

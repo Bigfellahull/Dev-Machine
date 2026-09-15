@@ -11,16 +11,23 @@ export DEV_MACHINE_ROOT
 # shellcheck disable=SC2034
 DEV_WORK_APT_PACKAGES=(
   bzip2
+  cmake
   ffmpeg
   ghostscript
   libharfbuzz-subset0
   libharfbuzz0b
   libpango-1.0-0
   libpangoft2-1.0-0
+  libleptonica-dev
+  libtiff-dev
+  libunwind8
   pandoc
   poppler-utils
+  python3-pdfminer
   qpdf
   redis-tools
+  tesseract-ocr-eng
+  tesseract-ocr-osd
 )
 
 log() {

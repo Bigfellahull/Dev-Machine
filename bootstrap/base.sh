@@ -22,6 +22,7 @@ packages_to_remove=(
   rclone
   ripgrep
   shellcheck
+  tesseract-ocr
   zoxide
 )
 if [ "$DEV_INSTALL_WORK_TOOLS" -eq 0 ]; then

@@ -131,3 +131,33 @@ for skill_host in .claude .codex; do
     '../../.agents/skills/collab' \
     "$HOME/$skill_host/skills/collab"
 done
+
+if [ "$DEV_MACHINE_PROFILE" = personal ]; then
+  install_managed_skill \
+    "$DEV_MACHINE_ROOT/config/ai/skills/use-railway" \
+    "$HOME/.agents/skills/use-railway"
+  for skill_host in .claude .codex; do
+    install_skill_symlink '../../.agents/skills/use-railway' "$HOME/$skill_host/skills/use-railway"
+  done
+else
+  railway_skill="$HOME/.agents/skills/use-railway"
+  if [ -e "$railway_skill" ] || [ -L "$railway_skill" ]; then
+    if [ ! -d "$railway_skill" ] || [ -L "$railway_skill" ] \
+      || ! diff -qr "$DEV_MACHINE_ROOT/config/ai/skills/use-railway" "$railway_skill" >/dev/null; then
+      die "Refusing to remove unmanaged Railway skill: $railway_skill"
+    fi
+  fi
+  for skill_host in .claude .codex; do
+    skill_link="$HOME/$skill_host/skills/use-railway"
+    if [ -e "$skill_link" ] || [ -L "$skill_link" ]; then
+      [ -L "$skill_link" ] && [ "$(readlink "$skill_link")" = '../../.agents/skills/use-railway' ] \
+        || die "Refusing to remove unmanaged Railway skill: $skill_link"
+    fi
+  done
+  for skill_host in .claude .codex; do
+    rm -f "$HOME/$skill_host/skills/use-railway"
+  done
+  if [ -d "$railway_skill" ]; then
+    rm -rf "$railway_skill"
+  fi
+fi

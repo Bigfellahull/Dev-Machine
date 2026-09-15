@@ -22,9 +22,13 @@ install_user_file \
   "$HOME/.config/mise/config.toml"
 
 work_config="$HOME/.config/mise/conf.d/dev-machine-work.toml"
+personal_config="$HOME/.config/mise/conf.d/dev-machine-personal.toml"
 if [ "$DEV_INSTALL_WORK_TOOLS" -eq 1 ]; then
+  rm -f "$personal_config"
+  "$mise" uninstall --all railway
   install_user_file "$DEV_MACHINE_ROOT/config/mise/work.toml" "$work_config"
 else
+  install_user_file "$DEV_MACHINE_ROOT/config/mise/personal.toml" "$personal_config"
   rm -f "$work_config"
   log "Removing work-only mise tools from the personal profile"
   "$mise" uninstall --all "pipx:weasyprint" rust syft uv
@@ -60,6 +64,22 @@ if [ "$DEV_INSTALL_WORK_TOOLS" -eq 1 ]; then
 elif [ -n "$credential_provider_version" ]; then
   log "Removing the work-only Azure Artifacts Credential Provider"
   "$mise" exec -- dotnet tool uninstall --global "$credential_provider_package"
+fi
+
+sqlpackage_package=Microsoft.SqlPackage
+sqlpackage_version=$(
+  "$mise" exec -- dotnet tool list --global \
+    | awk 'tolower($1) == "microsoft.sqlpackage" { print $2; exit }'
+)
+if [ "$DEV_INSTALL_WORK_TOOLS" -eq 1 ]; then
+  sqlpackage_action=install
+  [ -z "$sqlpackage_version" ] || sqlpackage_action=update
+  log "Installing or updating SqlPackage for work"
+  "$mise" exec -- dotnet tool "$sqlpackage_action" --global "$sqlpackage_package" \
+    --source https://api.nuget.org/v3/index.json
+elif [ -n "$sqlpackage_version" ]; then
+  log "Removing work-only SqlPackage"
+  "$mise" exec -- dotnet tool uninstall --global "$sqlpackage_package"
 fi
 
 if [ "$DEV_INSTALL_DOTNET_WASM_TOOLS" -eq 1 ]; then

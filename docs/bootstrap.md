@@ -1,5 +1,9 @@
 # Bootstrap and authentication
 
+For the provisioning commands and post-provision checklist, begin with the
+[README walkthrough](../README.md#start-here). This guide explains what the
+scripts manage and how updates work.
+
 ## Module order
 
 `bootstrap/bootstrap.sh --profile work|personal` runs:
@@ -8,13 +12,16 @@
 2. `memory.sh` — 8 GB swap and resilient user-systemd OOM handling.
 3. `dotnet.sh` — native Ubuntu dependencies required by Microsoft's .NET SDK.
 4. `runtimes.sh` — latest mise and all profile-appropriate managed tools;
-   adds the .NET `wasm-tools` workload and Azure Artifacts Credential Provider
-   on work machines.
+   adds SqlPackage, the .NET `wasm-tools` workload and Azure Artifacts Credential
+   Provider on work, and Railway on personal.
 5. `workstation-tools.sh` — common native libraries and database clients.
 6. `work-tools.sh` — work-only native PDF/media packages, Azure CLI and sqlcmd.
-7. `ai-tools.sh` — official native Codex, Claude and Grok installers.
-8. `shell.sh` — PATH, mise activation, tmux, safe Git defaults and `db`.
-9. `docker-bridge.sh` — OrbStack's supported macOS Docker command link.
+7. `ocr.sh` — pinned work-only Tesseract runtime.
+8. `ai-tools.sh` — official native Codex, Claude and Grok installers, shared
+   skills and the personal-only Railway skill.
+9. `shell.sh` — PATH, mise activation, tmux, safe Git defaults and `db`.
+10. `docker-bridge.sh` — OrbStack's supported macOS Docker command link and
+    work-only API tunnel service installation through `orb/docker-api.sh`.
 
 Every module ensures state and can be rerun. Apt installs, managed files, Git
 includes and shell source lines are idempotent. Rerunning also removes managed
@@ -46,9 +53,9 @@ additional vendor repository.
 
 The common mise configuration manages .NET 10, the latest Go, Node.js and
 Python releases, age, bat, fd, fzf, Git LFS, GitHub CLI, ripgrep, ShellCheck,
-sqlc, Starship and zoxide. It uses maintained core and Aqua backends and
-replaces separate `nvm`, `pyenv`, `asdf`, Go-manager and standalone CLI update
-paths. A project `mise.toml`, `.nvmrc`, `.node-version`, `.python-version`,
+sqlc, Starship and zoxide. Profile fragments add tools through mise's registry
+and `pipx:` backend. This replaces separate `nvm`, `pyenv`, `asdf`, Go-manager
+and standalone CLI update paths. A project `mise.toml`, `.nvmrc`, `.node-version`, `.python-version`,
 `.go-version`, `global.json`, or Go toolchain directive can override the global
 default where supported.
 
@@ -56,15 +63,16 @@ The global defaults deliberately move as new releases appear. Projects needing
 stable or byte-for-byte tool selection should commit exact versions and a mise
 lockfile. Provisioning upgrades moving global aliases and prunes the superseded
 runtime versions without mise's default release-age delay. The official mise
-installer also refreshes mise itself on every provisioning run. A clean rebuild
-records which versions those aliases resolved to.
+installer also refreshes mise itself on every provisioning run. Save the
+verification output in a private commissioning record when you need to know
+which versions a rebuild selected; bootstrap does not maintain a version log.
 
 mise's core .NET backend uses Microsoft's official install script and keeps the
 global selection on the latest stable SDK in major version 10, independently of
 the Ubuntu package release cadence. Ubuntu-packaged .NET files are removed to
 prevent `/usr/bin/dotnet` from masking the managed SDK, while the required
 Ubuntu native libraries remain apt-managed. The .NET backports PPA is not added.
-ICU provides Unicode and locale-aware globalization. LTTng-UST supports .NET's
+ICU provides Unicode and locale-aware globalisation. LTTng-UST supports .NET's
 Linux diagnostic and tracing pipeline; neither package installs another runtime
 or background service.
 
@@ -85,6 +93,18 @@ stable release without authenticating. Authentication remains runtime state;
 the first restore for a private feed should use `dotnet restore --interactive`.
 The personal profile removes the provider if it is present.
 
+SqlPackage follows the same work-only .NET global-tool installation and update
+policy, using Microsoft's `Microsoft.SqlPackage` package from NuGet.org.
+`sqlpackage /Version` is part of verification. Microsoft's published Linux
+support matrix lists x64; the ARM64 workstation also needs a representative
+BACPAC import/export commissioning test before relying on it. See the
+[SqlPackage installation guide](https://learn.microsoft.com/en-us/sql/tools/sqlpackage/sqlpackage-download).
+
+The personal mise fragment installs the latest Railway CLI. Work removes that
+managed tool and does not receive the Railway skill. Sign in with
+`railway login` on personal after provisioning; authentication and project
+links remain private runtime state.
+
 ## Workstation tools
 
 The common apt profile installs libpq development files and Ubuntu's
@@ -99,19 +119,32 @@ Alt-C directory navigation and fuzzy completion, and enables zoxide's `z` and
 The work profile additionally installs bzip2, FFmpeg, Ghostscript, Pandoc,
 Poppler utilities, qpdf, Redis client tools and WeasyPrint's native Pango and
 HarfBuzz libraries from Ubuntu. bzip2 supports extracting Microsoft's sqlcmd
-release archive; no active project invokes it directly. The latest WeasyPrint
-CLI is isolated by mise's `pipx:` backend using mise-managed uv; the standalone
+release archive. The latest WeasyPrint CLI is isolated by mise's `pipx:` backend using mise-managed uv; the standalone
 pipx package is not installed. Stable Rust and Syft are also work-only mise
 tools.
 
-Azure CLI remains in Microsoft's supported Ubuntu 26.04 ARM64 apt repository:
-its GitHub releases do not publish a Linux ARM64 executable for mise to manage.
-The Go implementation of sqlcmd remains a checked exception because it is not
-in mise's registry; the bootstrap downloads Microsoft's latest official ARM64
-archive and verifies the publisher's SHA-256 digest before installation. The AI
+Azure CLI comes from Microsoft's `resolute` ARM64 apt repository. The Go
+implementation of sqlcmd uses a separate vendor installation path: bootstrap
+downloads Microsoft's latest official ARM64 archive and verifies the
+publisher's SHA-256 digest before installation. The AI
 CLIs remain on their official native installers. After mise bootstraps itself,
-the Azure Artifacts Credential Provider, sqlcmd and the three AI CLIs are the
-only non-apt, non-mise installation paths.
+the Azure Artifacts Credential Provider, SqlPackage, sqlcmd, pinned Tesseract
+and the three AI CLIs are the non-apt, non-mise installation paths.
+
+Work installs pdfminer.six through Ubuntu's `python3-pdfminer` package. Use
+`PDFMINER_PYTHON=/usr/bin/python3` in the project's local configuration or
+command wrapper so it uses that package rather than mise's separate Python.
+The system package does not modify mise-managed or project Python environments.
+
+Work builds Tesseract 5.5.2 from its checksum-verified official source archive
+under `~/.local/share/dev-machine/tesseract`, using Ubuntu's CMake, Leptonica and
+TIFF development packages. English and orientation language data come from Ubuntu.
+Bootstrap removes Ubuntu's competing Tesseract executable so it cannot mask
+the managed release. The pinned release supports OCR fixtures that require
+5.5.2; it is not an assertion that output is identical across different language-data or native
+library versions. Personal removes the managed OCR runtime and its work-only
+packages. Verification checks the version, English language data and pdfminer
+import. It also checks the FFmpeg encoders used by the work media pipeline.
 
 7-Zip, standalone pipx, rclone, Buf, AWS CLI, Colima, Caddy, Certbot,
 Cloudflared, mkcert, libgdiplus and SDL development libraries are outside the
@@ -144,7 +177,8 @@ Each file is created only when absent so reruns preserve user changes,
 plugins and MCP configuration. The files contain no authentication state;
 credentials remain separate for every machine and profile.
 
-Global AI instructions and the approved skill trees are managed on every run.
+Global AI instructions and the approved skill trees are managed on every run
+unless `--skip-ai` is selected.
 `codebase-sweep` and `collab` each have one canonical copy under
 `~/.agents/skills`, with symlinks from `~/.claude/skills` and `~/.codex/skills`.
 Grok discovers the shared location directly. Bootstrap moves an existing
@@ -171,6 +205,13 @@ claude
 grok
 ```
 
+Personal additionally receives the complete vendored `use-railway` skill tree
+under `~/.agents/skills`, with the same Claude and Codex symlink layout as the
+shared skills. Work removes only recognised managed Railway skill copies;
+unexpected or modified copies produce an error instead of being deleted.
+`--skip-ai` skips Railway skill installation as well as the other AI setup;
+the personal Railway CLI remains part of the runtime profile.
+
 When provisioning intentionally uses `--skip-ai`, verify that configuration
 with `bootstrap/verify.sh --skip-ai`.
 
@@ -179,7 +220,7 @@ OpenAI documents its standalone Linux installation in the
 
 ## Git and GitHub identity
 
-Provisioning sets only non-identity Git behavior. Configure identity privately:
+Provisioning sets only non-identity Git behaviour. Configure identity privately:
 
 ```bash
 git config --global user.name "Your Name"
@@ -191,7 +232,7 @@ gh auth status
 Do this independently on work and personal. SSH private keys, agent state and
 GitHub tokens are runtime state, not repository content.
 
-The managed behavior uses `main` for new repositories, prunes deleted remote
+The managed behaviour uses `main` for new repositories, prunes deleted remote
 branches, creates an upstream on the first push, follows annotated tags, rebases
 on pull and reuses recorded conflict resolutions. `git lfs install --skip-repo`
 configures global LFS filters without changing any repository.
@@ -206,12 +247,32 @@ before continuing or returning control.
 
 ## Updating a provisioned machine
 
-Pull this repository, review the diff, and rerun:
+On the matching Mac mini, review and update the host checkout, then run from
+its root directory:
 
 ```bash
-bootstrap/bootstrap.sh --profile work
+bin/dev provision work --dry-run
+bin/dev provision work
+```
+
+Use `personal` on the personal mini. This path handles required Ubuntu reboots.
+It leaves an existing `~/code/dev-machine` Git checkout unchanged. Inside Ubuntu,
+review and update that checkout separately to the same revision, preserving any
+local changes, then open a fresh shell and run:
+
+```bash
+cd ~/code/dev-machine
 bootstrap/verify.sh
 ```
 
-Use `personal` on that host. A clean rebuild remains the stronger acceptance
-test because it detects undocumented state.
+Pass `--skip-ai` to both provisioning and verification when appropriate. A stale
+guest checkout can compare installed files against old definitions.
+
+For direct provisioning inside Ubuntu, run
+`bootstrap/bootstrap.sh --profile work` from its checkout. This also upgrades
+packages, but does not restart the VM. If `/var/run/reboot-required` exists,
+restart the matching VM before verification.
+
+Keep a VM on its intended profile. Package removal on a profile change does not
+erase credentials or turn an existing VM into a clean work/personal boundary.
+A clean rebuild remains the stronger acceptance test for undocumented state.

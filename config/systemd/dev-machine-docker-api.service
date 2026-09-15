@@ -1,0 +1,14 @@
+[Unit]
+Description=Work VM access to the matching Mac's OrbStack Docker API
+ConditionPathExists=%h/.config/dev-machine/docker-api/config.json
+
+[Service]
+Type=simple
+ExecStart="%h/.local/bin/orbstack-docker-api" serve
+Restart=on-failure
+RestartPreventExitStatus=78
+RestartSec=5
+UMask=0077
+
+[Install]
+WantedBy=default.target

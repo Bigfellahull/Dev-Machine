@@ -37,4 +37,17 @@ PATH="$mock_directory:$PATH" SQLCMD_TEST_MODE=malformed assert_fails sqlcmd_vers
 output=$(PATH="$mock_directory:$PATH" SQLCMD_TEST_MODE=normal sqlcmd_version)
 assert_contains "$output" '1.8.0'
 
+cat >"$mock_directory/ffmpeg" <<'EOF'
+#!/usr/bin/env bash
+for encoder in png mjpeg libvpx libvpx-vp9 libvorbis libmp3lame; do
+  [ "$encoder" != "${MISSING_ENCODER:-}" ] || continue
+  printf ' V..... %s description\n' "$encoder"
+done
+EOF
+chmod +x "$mock_directory/ffmpeg"
+PATH="$mock_directory:$PATH" ffmpeg_encoders_available
+for encoder in png mjpeg libvpx libvpx-vp9 libvorbis libmp3lame; do
+  PATH="$mock_directory:$PATH" MISSING_ENCODER="$encoder" assert_fails ffmpeg_encoders_available
+done
+
 printf 'verification helper tests passed (%d assertions)\n' "$test_count"

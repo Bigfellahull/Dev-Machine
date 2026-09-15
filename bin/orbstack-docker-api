@@ -1,0 +1,172 @@
+#!/usr/bin/env bash
+set -Eeuo pipefail
+
+state_dir="$HOME/.config/dev-machine/docker-api"
+unit=dev-machine-docker-api.service
+
+# Report invalid commissioning state without triggering systemd restart loops.
+die() {
+  printf 'ERROR: %s\n' "$*" >&2
+  exit 78
+}
+
+# Describe the explicit commissioning and command-scoped API interface.
+usage() {
+  cat <<'USAGE'
+Usage:
+  orbstack-docker-api init MAC_HOST MAC_USER MAC_SOCKET VERIFIED_KNOWN_HOSTS
+  orbstack-docker-api public-key
+  orbstack-docker-api start|stop|verify
+  orbstack-docker-api run COMMAND [ARG...]
+
+Work only. init creates a VM-specific key and imports an already verified
+Mac host-key file. Authorise the printed public key on the matching Mac before
+start. run sets DOCKER_HOST only for its command. See docs/docker-api.md.
+USAGE
+}
+
+# Reject links and unexpected permissions around private tunnel material.
+check_private_file() {
+  [ -f "$1" ] && [ ! -L "$1" ] \
+    && [ "$(stat -c %u "$1")" = "$(id -u)" ] \
+    && [ "$(stat -c %a "$1")" = 600 ] || die "Expected an owned mode-0600 file: $1"
+}
+
+# Restrict values that OpenSSH interprets as destinations or forwarding syntax.
+check_destination() {
+  [[ "$mac_host" =~ ^[a-zA-Z0-9][a-zA-Z0-9.-]*$ ]] || die "Invalid Mac hostname"
+  [[ "$mac_user" =~ ^[a-zA-Z_][a-zA-Z0-9_-]*$ ]] || die "Invalid Mac username"
+  [[ "$mac_socket" =~ ^/[a-zA-Z0-9_./-]+/\.orbstack/run/docker\.sock$ ]] \
+    || die "Expected an absolute Mac OrbStack socket path without spaces"
+}
+
+# Bind credentials to the commissioning hostname so clones cannot reuse them.
+load_config() {
+  [ -d "$state_dir" ] && [ ! -L "$state_dir" ] \
+    && [ "$(stat -c %u "$state_dir")" = "$(id -u)" ] \
+    && [ "$(stat -c %a "$state_dir")" = 700 ] || die "Tunnel is not commissioned safely"
+  for private_file in config.json known_hosts id_ed25519; do
+    check_private_file "$state_dir/$private_file"
+  done
+  jq -e 'type == "object" and .profile == "work" and
+    ([.host, .user, .socket, .machine] | all(type == "string" and length > 0))' \
+    "$state_dir/config.json" >/dev/null || die "Invalid tunnel configuration"
+  mac_host=$(jq -r .host "$state_dir/config.json")
+  mac_user=$(jq -r .user "$state_dir/config.json")
+  mac_socket=$(jq -r .socket "$state_dir/config.json")
+  [ "$(jq -r .machine "$state_dir/config.json")" = "$(hostname)" ] \
+    || die "Tunnel credentials belong to another VM; commission a unique key for this clone"
+  check_destination
+  ssh-keygen -F "$mac_host" -f "$state_dir/known_hosts" >/dev/null \
+    || die "Verified host key is missing for $mac_host"
+}
+
+# Keep the forwarded endpoint inside the user's private systemd runtime directory.
+check_runtime() {
+  runtime_dir=${XDG_RUNTIME_DIR:?XDG_RUNTIME_DIR must identify the user runtime directory}
+  [ -d "$runtime_dir" ] && [ ! -L "$runtime_dir" ] \
+    && [ "$(stat -c %u "$runtime_dir")" = "$(id -u)" ] \
+    && [ "$(stat -c %a "$runtime_dir")" = 700 ] || die "Unsafe user runtime directory"
+  socket="$runtime_dir/orbstack-docker.sock"
+  if [ -e "$socket" ] || [ -L "$socket" ]; then
+    [ -S "$socket" ] && [ ! -L "$socket" ] \
+      && [ "$(stat -c %u "$socket")" = "$(id -u)" ] \
+      && [ "$(stat -c %a "$socket")" = 600 ] || die "Unsafe forwarded socket: $socket"
+  fi
+}
+
+# Probe the API itself rather than accepting the presence of a stale socket.
+api_ready() {
+  [ -S "$socket" ] && [ "$(curl --disable --silent --fail --noproxy '*' --max-time 3 \
+    --unix-socket "$socket" http://localhost/_ping)" = OK ]
+}
+
+action=${1:---help}
+shift || true
+case "$action" in -h|--help) usage; exit 0 ;; esac
+[ "$(uname -s)" = Linux ] || die "Run inside the work Ubuntu VM"
+[ "$(id -u)" -ne 0 ] || die "Run as the development user"
+[ "$(cat "$HOME/.config/dev-machine/profile" 2>/dev/null)" = work ] \
+  || die "Docker API access is enabled only for work"
+for parent in "$HOME/.config" "$HOME/.config/dev-machine"; do
+  [ -d "$parent" ] && [ ! -L "$parent" ] \
+    && [ "$(stat -c %u "$parent")" = "$(id -u)" ] || die "Unsafe configuration directory: $parent"
+  parent_mode=$(stat -c %a "$parent")
+  (( (8#$parent_mode & 0022) == 0 )) || die "Configuration directory is writable by others: $parent"
+done
+
+case "$action" in
+  init)
+    [ "$#" -eq 4 ] || die "init requires MAC_HOST MAC_USER MAC_SOCKET VERIFIED_KNOWN_HOSTS"
+    mac_host=$1 mac_user=$2 mac_socket=$3 known_hosts=$4
+    check_destination
+    [ -f "$known_hosts" ] && [ ! -L "$known_hosts" ] || die "Expected a verified host-key file"
+    ssh-keygen -F "$mac_host" -f "$known_hosts" >/dev/null || die "Host-key file does not contain $mac_host"
+    [ ! -e "$state_dir" ] && [ ! -L "$state_dir" ] || die "Tunnel state already exists; use public-key or verify"
+    umask 077
+    staging=$(mktemp -d "$HOME/.config/dev-machine/.docker-api.XXXXXX")
+    trap 'rm -rf "$staging"' EXIT
+    cp "$known_hosts" "$staging/known_hosts"
+    chmod 600 "$staging/known_hosts"
+    ssh-keygen -q -t ed25519 -N '' -C orbstack-docker-api-work-mini -f "$staging/id_ed25519"
+    jq -n --arg host "$mac_host" --arg user "$mac_user" --arg socket "$mac_socket" \
+      --arg machine "$(hostname)" \
+      '{profile: "work", host: $host, user: $user, socket: $socket, machine: $machine}' \
+      >"$staging/config.json"
+    mv "$staging" "$state_dir"
+    printf 'Authorise this public key on the matching Mac, then run orbstack-docker-api start:\n'
+    cat "$state_dir/id_ed25519.pub"
+    ;;
+  public-key)
+    [ "$#" -eq 0 ] || die "public-key accepts no arguments"
+    load_config
+    ssh-keygen -y -f "$state_dir/id_ed25519"
+    ;;
+  serve)
+    [ "$#" -eq 0 ] || die "serve accepts no arguments"
+    load_config
+    check_runtime
+    exec ssh -F /dev/null -NT -p 22 -l "$mac_user" \
+      -i "$state_dir/id_ed25519" \
+      -o BatchMode=yes -o IdentitiesOnly=yes -o IdentityAgent=none \
+      -o StrictHostKeyChecking=yes -o "UserKnownHostsFile=$state_dir/known_hosts" \
+      -o GlobalKnownHostsFile=/dev/null -o UpdateHostKeys=no \
+      -o ExitOnForwardFailure=yes -o StreamLocalBindUnlink=yes -o StreamLocalBindMask=0177 \
+      -o ServerAliveInterval=15 -o ServerAliveCountMax=3 -o ConnectTimeout=10 \
+      -L "$socket:$mac_socket" "$mac_host"
+    ;;
+  start)
+    [ "$#" -eq 0 ] || die "start accepts no arguments"
+    load_config
+    check_runtime
+    systemctl --user enable --now "$unit"
+    for ((attempt = 0; attempt < 10; attempt++)); do
+      check_runtime
+      if api_ready; then
+        printf 'Docker API ready: unix://%s\n' "$socket"
+        exit 0
+      fi
+      sleep 1
+    done
+    die "Docker API did not become ready; inspect journalctl --user -u $unit"
+    ;;
+  stop)
+    [ "$#" -eq 0 ] || die "stop accepts no arguments"
+    systemctl --user disable --now "$unit"
+    ;;
+  verify|run)
+    if [ "$action" = verify ]; then
+      [ "$#" -eq 0 ] || die "verify accepts no arguments"
+    else
+      [ "$#" -gt 0 ] || die "run requires a command"
+    fi
+    load_config
+    check_runtime
+    api_ready || die "Docker API is unavailable; run orbstack-docker-api start"
+    if [ "$action" = run ]; then
+      exec env "DOCKER_HOST=unix://$socket" "$@"
+    fi
+    printf 'Docker API ready: unix://%s\n' "$socket"
+    ;;
+  *) die "Unknown command: $action" ;;
+esac

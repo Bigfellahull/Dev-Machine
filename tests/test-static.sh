@@ -161,7 +161,7 @@ if find config/ai/skills \( -type d -name __pycache__ -o -type f -name '*.pyc' \
   printf 'Generated Python artifacts must not be copied with managed skills.\n' >&2
   exit 1
 fi
-if find config/ai/skills -mindepth 1 -maxdepth 1 -type d ! -name codebase-sweep ! -name collab \
+if find config/ai/skills -mindepth 1 -maxdepth 1 -type d ! -name codebase-sweep ! -name collab ! -name use-railway \
   -print -quit | grep -q .; then
   printf 'An unapproved managed AI skill is present.\n' >&2
   exit 1
