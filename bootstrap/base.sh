@@ -83,6 +83,7 @@ sudo DEBIAN_FRONTEND=noninteractive apt-get install -y \
   pkg-config \
   procps \
   psmisc \
+  python3-tomlkit \
   rsync \
   socat \
   tmux \

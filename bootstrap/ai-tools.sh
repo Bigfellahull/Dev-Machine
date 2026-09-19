@@ -88,23 +88,13 @@ install_native_cli codex https://chatgpt.com/codex/install.sh
 install_native_cli claude https://claude.ai/install.sh
 install_native_cli grok https://x.ai/cli/install.sh
 
-log "Installing safe AI CLI defaults"
-install_user_file_if_missing \
-  "$DEV_MACHINE_ROOT/config/ai/codex.toml" \
-  "$HOME/.codex/config.toml" \
-  0600
-install_user_file_if_missing \
-  "$DEV_MACHINE_ROOT/config/ai/claude.json" \
-  "$HOME/.claude/settings.json" \
-  0600
-install_user_file_if_missing \
-  "$DEV_MACHINE_ROOT/config/ai/grok.toml" \
-  "$HOME/.grok/config.toml" \
-  0600
-install_user_file_if_missing \
-  "$DEV_MACHINE_ROOT/config/ai/grok-sandbox.toml" \
-  "$HOME/.grok/sandbox.toml" \
-  0600
+log "Updating managed AI settings and profile-specific MCP servers"
+"${DEV_MACHINE_PYTHON:-/usr/bin/python3}" "$SCRIPT_DIR/ai-config.py" apply \
+  --profile "$DEV_MACHINE_PROFILE"
+
+log "Installing the approved Claude plugins"
+"${DEV_MACHINE_PYTHON:-/usr/bin/python3}" "$SCRIPT_DIR/ai-config.py" install-plugins \
+  --profile "$DEV_MACHINE_PROFILE"
 
 log "Installing managed AI instructions and skills"
 migrate_collab_skill "$HOME"

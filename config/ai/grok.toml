@@ -1,6 +1,6 @@
 [models]
 default = "grok-4.6"
-default_reasoning_effort = "xhigh"
+default_reasoning_effort = "high"
 
 [ui]
 permission_mode = "auto"

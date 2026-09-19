@@ -173,6 +173,17 @@ else
     check_command "$command_name"
   done
 
+  if "${DEV_MACHINE_PYTHON:-/usr/bin/python3}" "$SCRIPT_DIR/ai-config.py" verify --profile "$profile"; then
+    pass "managed AI models, effort, safety settings and MCP registrations are current"
+  else
+    fail "managed AI configuration is incomplete or differs from bootstrap"
+  fi
+  if "${DEV_MACHINE_PYTHON:-/usr/bin/python3}" "$SCRIPT_DIR/ai-config.py" verify-plugins --profile "$profile"; then
+    pass "approved Claude plugins are installed at user scope"
+  else
+    fail "approved Claude plugins or the required CLI version are missing"
+  fi
+
   for config_file in \
     "$HOME/.codex/config.toml" \
     "$HOME/.codex/AGENTS.md" \
@@ -274,6 +285,13 @@ if [ "$profile" = work ]; then
   fi
 elif [ "$profile" = personal ]; then
   command -v railway >/dev/null 2>&1 && check_version railway railway --version
+  if [ "$skip_ai" -eq 0 ]; then
+    if railway_supports_hosted_mcp; then
+      pass "Railway supports the hosted MCP proxy"
+    else
+      fail "Railway CLI 5.44.0 or newer is required for the hosted MCP proxy"
+    fi
+  fi
 fi
 if [ "$skip_ai" -eq 0 ]; then
   command -v codex >/dev/null 2>&1 && check_version codex codex --version

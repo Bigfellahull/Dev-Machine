@@ -73,6 +73,7 @@ class PartnerTurnTests(unittest.TestCase):
                             *selectors,
                         ]
                     )
+                    self.assertEqual(args.effort, "high")
                     if args.provider == "claude":
                         command = partner_turn._build_claude_command("/bin/claude", args)
                     else:

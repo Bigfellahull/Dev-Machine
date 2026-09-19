@@ -1,0 +1,35 @@
+#!/usr/bin/env python3
+"""Emulate Claude plugin installation without network access or provider logins."""
+
+import json
+import os
+from pathlib import Path
+import sys
+
+args = sys.argv[1:]
+root = Path.home() / ".claude/plugins"
+root.mkdir(parents=True, exist_ok=True)
+with (root / "test-commands.log").open("a") as log:
+    log.write(json.dumps(args) + "\n")
+if args == ["--version"]:
+    print(os.environ.get("TEST_CLAUDE_VERSION", "2.1.276 (Claude Code)"))
+elif os.environ.get("TEST_PLUGIN_FAILURE"):
+    print("private-placeholder-must-not-appear", file=sys.stderr)
+    sys.exit(1)
+elif args == ["plugin", "marketplace", "add", "anthropics/claude-plugins-official"]:
+    (root / "known_marketplaces.json").write_text(json.dumps({
+        "claude-plugins-official": {
+            "source": {"source": "github", "repo": "anthropics/claude-plugins-official"}
+        }
+    }))
+elif len(args) == 5 and args[:2] == ["plugin", "install"] and args[3:] == ["--scope", "user"]:
+    plugin = args[2]
+    registry = root / "installed_plugins.json"
+    data = json.loads(registry.read_text()) if registry.exists() else {"version": 2, "plugins": {}}
+    location = root / "cache" / plugin.split("@")[0]
+    (location / ".claude-plugin").mkdir(parents=True, exist_ok=True)
+    (location / ".claude-plugin/plugin.json").write_text(json.dumps({"name": plugin.split("@")[0]}))
+    data["plugins"][plugin] = [{"scope": "user", "installPath": str(location), "version": "1.0"}]
+    registry.write_text(json.dumps(data))
+else:
+    sys.exit(2)

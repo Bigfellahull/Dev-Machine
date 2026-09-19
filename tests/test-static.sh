@@ -116,8 +116,8 @@ for redundant_package in make software-properties-common wget; do
 done
 
 jq -e '
-  .model == "fable"
-  and .effortLevel == "xhigh"
+  .model == "claude-fable-5-1"
+  and .effortLevel == "high"
   and .theme == "auto"
   and .permissions.defaultMode == "auto"
   and .sandbox.enabled == true
@@ -126,8 +126,9 @@ jq -e '
   and .sandbox.failIfUnavailable == true
   and .env.CLAUDE_CODE_SUBPROCESS_ENV_SCRUB == "1"
 ' config/ai/claude.json >/dev/null
-grep -Fq 'model = "gpt-5.6-sol"' config/ai/codex.toml
-grep -Fq 'model_reasoning_effort = "xhigh"' config/ai/codex.toml
+grep -Fq 'model = "gpt-6-astra"' config/ai/codex.toml
+grep -Fq 'model_reasoning_effort = "high"' config/ai/codex.toml
+grep -Fq 'goals = true' config/ai/codex.toml
 grep -Fq 'approval_policy = "on-request"' config/ai/codex.toml
 grep -Fq 'approvals_reviewer = "auto_review"' config/ai/codex.toml
 grep -Fq 'sandbox_mode = "workspace-write"' config/ai/codex.toml
@@ -143,7 +144,7 @@ grep -Fq 'auto_allow_bash = false' config/ai/grok.toml
 grep -Fq 'ignore_default_excludes = false' config/ai/grok.toml
 grep -Fq '[profiles.safe-workspace]' config/ai/grok-sandbox.toml
 grep -Fq 'extends = "workspace"' config/ai/grok-sandbox.toml
-grep -Fq 'install_user_file_if_missing' bootstrap/ai-tools.sh
+grep -Fq 'ai-config.py" apply' bootstrap/ai-tools.sh
 grep -Fq 'config/ai/skills/codebase-sweep' bootstrap/ai-tools.sh
 grep -Fq 'config/ai/skills/collab' bootstrap/ai-tools.sh
 grep -Fq "'../../.agents/skills/codebase-sweep'" bootstrap/ai-tools.sh

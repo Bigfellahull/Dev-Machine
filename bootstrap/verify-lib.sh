@@ -15,6 +15,21 @@ sqlcmd_version() {
   printf '%s\n' "$parsed_version"
 }
 
+# Older releases route the same MCP command to a different server implementation.
+railway_supports_hosted_mcp() {
+  local version
+  version=$(railway --version) || return 1
+  printf '%s\n' "$version" | awk '
+    match($0, /[0-9]+\.[0-9]+\.[0-9]+/) {
+      split(substr($0, RSTART, RLENGTH), parts, ".")
+      found = 1
+      supported = (parts[1] > 5 || (parts[1] == 5 && parts[2] >= 44))
+      exit
+    }
+    END { exit !(found && supported) }
+  '
+}
+
 # Check the concrete encoders used by the work media pipeline.
 ffmpeg_encoders_available() {
   local encoders encoder

@@ -115,7 +115,7 @@ def _parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
         "--model",
         help="Provider model override (defaults: Claude claude-fable-5-1; Grok grok-4.6; Codex gpt-6-astra)",
     )
-    parser.add_argument("--effort", help="Optional provider reasoning effort")
+    parser.add_argument("--effort", default="high", help="Provider reasoning effort (default: high)")
     parser.add_argument(
         "--timeout-seconds",
         type=_positive_int,

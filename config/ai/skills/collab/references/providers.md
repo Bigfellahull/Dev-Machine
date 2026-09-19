@@ -3,6 +3,8 @@
 Read the sections for the selected external participants. Use `scripts/partner_turn.py`; do not
 replace its safety controls with bare CLI calls. The helper defaults to Claude when `--provider` is
 omitted for compatibility, so always pass the provider and model for panel calls.
+All providers default to `high` reasoning effort. Pass `--effort` to override it
+for a particular call; isolated partners do not rely on user configuration.
 
 ## Shared Git history
 

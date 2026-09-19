@@ -172,10 +172,124 @@ permanent binary checksum. Existing installs are not replaced on every
 bootstrap run. Record versions in a commissioning log and update them
 deliberately when validating a rebuild.
 
-Bootstrap installs safe model, approval and sandbox defaults from `config/ai/`.
-Each file is created only when absent so reruns preserve user changes,
-plugins and MCP configuration. The files contain no authentication state;
-credentials remain separate for every machine and profile.
+Bootstrap manages selected fields in the AI configuration files on every run.
+It uses Ubuntu's `python3-tomlkit` package to preserve TOML comments and unrelated
+settings. JSON configuration is merged without replacing unrelated fields.
+Configuration files are written atomically with mode `0600`; malformed files
+and symlinked paths are rejected before any configuration is written. Close the
+AI clients before provisioning so they cannot overwrite the updated settings.
+
+| CLI | Model | Reasoning effort | Permission mode |
+|---|---|---|---|
+| Codex | `gpt-6-astra` | `high` | `on-request` with `auto_review` |
+| Claude | `claude-fable-5-1` | `high` | `auto` |
+| Grok | `grok-4.6` | `high` | `auto` |
+
+These are global defaults, not restrictions on explicit command-line or project
+overrides. Rerunning bootstrap restores the managed models, effort, permissions,
+sandbox settings and named MCP registrations while preserving unrelated
+configuration and authentication state. Conflicting Claude Fable 5.1 effort
+overrides and Grok 4.6's legacy per-model effort setting are removed. No per-model
+effort overrides are installed. Codex goals are enabled but no goal is created.
+
+Codex retains its workspace-write sandbox and automatic approval reviewer.
+Claude retains its enabled sandbox, refuses unsandboxed commands and fails when
+the sandbox is unavailable. Grok uses `safe-workspace` with automatic Bash
+approval disabled. Automated safety checks can still block actions or require
+user input. Grok's `remember_mode` remains false so a temporary permission-mode
+change does not become the default for later sessions. Its secondary fork model
+is unset, so forks use the main default model. This does not change Grok's
+separate conversational-memory settings.
+
+### MCP servers and authentication
+
+Bootstrap configures the following servers in Codex and Grok's user TOML files
+and Claude's user-scoped `~/.claude.json`:
+
+| Server | Work | Personal | Transport |
+|---|---|---|---|
+| Local work servers | Optional | No | Names and HTTPS endpoints supplied locally |
+| Railway | No | Yes | `railway mcp` over stdio |
+| Linear | No | Yes | `https://mcp.linear.app/mcp` |
+
+Codex also retains the OpenAI documentation server. Work provisioning removes
+the named Railway and Linear registrations. Personal provisioning does not read
+the private work override. Other server registrations, account state and
+unrelated plugins are preserved. This is not a way to convert a work VM into a
+personal VM; use a fresh machine to keep credentials and runtime data separate.
+
+To add private work servers, create an override in the checkout used to run
+bootstrap. `config/local/` is ignored by Git:
+
+```bash
+mkdir -p config/local
+if [ ! -e config/local/mcp.work.json ]; then
+  install -m 0600 config/ai/mcp.work.example.json config/local/mcp.work.json
+fi
+```
+
+Replace the example server name and URL with the private values. Each entry
+maps a server name to an object containing only `url`; multiple servers are
+allowed. Use HTTPS endpoints without tokens, query strings or embedded
+credentials. Server names accept letters, digits, underscores and hyphens;
+`railway`, `linear` and `openaiDeveloperDocs` are reserved. Authenticate through
+each client's normal flow after provisioning.
+
+For host-driven OrbStack provisioning, use the work mini's source checkout;
+the initial VM checkout inherits that local file. For bootstrap run directly
+inside Ubuntu, use its checkout. Keep the override on work machines and back it
+up privately: Git clones do not include it. Then rerun provisioning or, inside
+Ubuntu, update only the managed settings:
+
+```bash
+/usr/bin/python3 bootstrap/ai-config.py apply --profile work
+```
+
+The override is optional. When present, verification checks its registrations
+in all three clients. When absent, work provisioning adds no private servers.
+Private names and endpoints are never printed by the helper. Removing an
+override entry does not delete an installed registration; remove it explicitly
+from each client when retiring a service.
+
+Complete each client's normal MCP authentication flow for private servers or Linear after
+provisioning. Railway reuses the personal VM's `railway login` credentials; the
+hosted proxy requires Railway CLI 5.44.0 or newer. Bootstrap does not sign in,
+copy tokens, invoke MCP tools or add blanket permission rules for these servers.
+Before changing any managed endpoint or stdio command, bootstrap checks the
+original registration for authentication and other non-portable settings. This
+includes environment-backed headers, credential helpers and unknown settings
+that could carry credentials in newer clients. A conflict stops the operation
+before any configuration file is written, without printing the private values.
+Resolve the affected registration explicitly and retry. Unchanged destinations
+keep their authentication; timeouts and tool restrictions survive endpoint
+updates without credentials. The same checks apply to the documentation server.
+
+See the [Railway MCP guide](https://docs.railway.com/ai/mcp-server),
+[Linear MCP guide](https://linear.app/docs/mcp) and
+[Claude user-scoped MCP configuration](https://code.claude.com/docs/en/mcp).
+
+### Claude plugins
+
+Both profiles install and enable these user-scoped plugins from Anthropic's
+official `anthropics/claude-plugins-official` marketplace:
+
+- `code-simplifier`
+- `security-guidance`
+- `code-review`
+
+Bootstrap uses Claude's plugin installer only for missing or incomplete
+installations. Verification checks the official marketplace source, user-scoped
+registry entries, plugin manifests and enabled settings. An enabled setting
+alone does not count as an installation. Other installed plugins are preserved.
+Plugin install failures fail provisioning without printing captured CLI output.
+
+Claude Code 2.1.257 or newer is required for Fable 5.1. If an existing CLI is too
+old, run `claude update` and rerun provisioning. The bootstrap does not replace
+existing CLI binaries simply to change configuration. See
+[Claude model configuration](https://code.claude.com/docs/en/model-config) and
+[plugin installation](https://code.claude.com/docs/en/discover-plugins).
+
+### Instructions, skills and verification
 
 Global AI instructions and the approved skill trees are managed on every run
 unless `--skip-ai` is selected.
@@ -187,9 +301,10 @@ links; conflicting directories or unexpected links are left untouched and
 reported as errors. The default `collab` panel is Claude, Grok,
 and Codex, with whichever participating agent you are talking to as lead.
 Each forms an independent position from a neutral brief before the panel
-shares proposals and debates verified evidence. No plugin registry,
-remembered approval, project trust, hook, history or authentication state
-is copied.
+shares proposals and debates verified evidence. Shared instructions include
+the writing and pasteable-output policy. No plugin registry, remembered
+approval, project trust, hook, history or authentication state is copied
+from another machine.
 
 Claude follows the terminal appearance automatically, Grok minimal mode uses
 the terminal palette, and Codex leaves its independent syntax-highlighting
@@ -214,6 +329,20 @@ the personal Railway CLI remains part of the runtime profile.
 
 When provisioning intentionally uses `--skip-ai`, verify that configuration
 with `bootstrap/verify.sh --skip-ai`.
+
+The verifier checks managed settings and profile-specific MCP registrations
+without authenticating or calling remote services. Test real MCP connections
+after completing sign-in. Configuration and plugin checks can also be run
+independently from the checkout:
+
+```bash
+/usr/bin/python3 bootstrap/ai-config.py verify --profile work
+/usr/bin/python3 bootstrap/ai-config.py verify-plugins --profile work
+```
+
+Use `personal` on the personal VM. The configuration helper defaults to the
+Ubuntu system Python, where the apt-managed TOML dependency is installed.
+`DEV_MACHINE_PYTHON` is an override for isolated test environments.
 
 OpenAI documents its standalone Linux installation in the
 [official Codex CLI documentation](https://learn.chatgpt.com/docs/codex/cli).

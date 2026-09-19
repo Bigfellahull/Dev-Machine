@@ -11,9 +11,13 @@ mkdir -p "$fixture/mocks" "$fixture/home/.local/bin"
 export TEST_MOCK_MISE="$fixture/mocks/mise" TEST_TOOL_LOG="$fixture/tools.log"
 export TEST_INSTALLED_TOOLS="$fixture/installed-tools"
 touch "$TEST_INSTALLED_TOOLS" "$TEST_TOOL_LOG"
+export TEST_BOOTSTRAP_ROOT="$fixture/repo"
+mkdir -p "$TEST_BOOTSTRAP_ROOT/config"
+cp -R "$TEST_ROOT/bootstrap" "$TEST_ROOT/profiles" "$TEST_BOOTSTRAP_ROOT/"
+cp -R "$TEST_ROOT/config/ai" "$TEST_ROOT/config/mise" "$TEST_BOOTSTRAP_ROOT/config/"
 
 cat >"$fixture/bash-env" <<'EOF'
-. "$TEST_ROOT/bootstrap/lib.sh"
+. "$TEST_BOOTSTRAP_ROOT/bootstrap/lib.sh"
 # Stub the platform boundary; package managers below are separate mocks.
 require_target_ubuntu() { :; }
 EOF
@@ -44,6 +48,8 @@ for cli in codex claude grok; do
   printf '#!/bin/sh\nexit 0\n' >"$fixture/mocks/$cli"
   chmod +x "$fixture/mocks/$cli"
 done
+cp "$TEST_ROOT/tests/fixtures/claude" "$fixture/mocks/claude"
+chmod +x "$fixture/mocks/claude"
 
 # Execute the real module with isolated user state and mocked external installers.
 run_module() {
@@ -51,9 +57,10 @@ run_module() {
   local work=0
   [ "$profile" != work ] || work=1
   env HOME="$fixture/home" BASH_ENV="$fixture/bash-env" \
+    DEV_MACHINE_PYTHON="$(command -v python3)" \
     PATH="$fixture/mocks:$PATH" DEV_MACHINE_PROFILE="$profile" \
     DEV_INSTALL_WORK_TOOLS="$work" DEV_INSTALL_DOTNET_WASM_TOOLS="$work" \
-    "$TEST_ROOT/bootstrap/$module.sh" >/dev/null
+    "$TEST_BOOTSTRAP_ROOT/bootstrap/$module.sh" >/dev/null
 }
 
 run_module work runtimes

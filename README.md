@@ -109,9 +109,12 @@ All remaining commands run **inside Ubuntu**, except where marked otherwise.
   grok
   ```
 
-  Exit each CLI before launching the next. Bootstrap installs shared
-  instructions and skills; provider logins, project trust, plugins and MCP
-  account connections still need their own setup.
+  Exit each CLI before launching the next. Bootstrap manages the AI defaults,
+  shared instructions and skills, and installs the three approved Claude plugins.
+  Provider logins, project trust and MCP authentication remain private setup.
+  Follow [AI configuration and MCP commissioning](docs/bootstrap.md#ai-tools):
+  supply any private work MCP overrides; authenticate Railway and Linear on
+  personal. Verify the relevant integrations in each AI client.
 
 ### 4. Set up local HTTPS — both profiles
 
@@ -241,6 +244,11 @@ This provisioning checkout is the deliberate host-side exception: it must
 exist on macOS before a VM can be created.
 
 ## Repository checks
+
+The test Python needs `tomlkit` (installed by `python3-tomlkit` on the Ubuntu
+workstations). On other systems, install it in a development virtual environment
+and activate that environment before running the checks. Tests use temporary
+homes and mock Claude's plugin installer; they do not modify real AI settings.
 
 These checks do not provision a machine or start infrastructure:
 

@@ -50,4 +50,15 @@ for encoder in png mjpeg libvpx libvpx-vp9 libvorbis libmp3lame; do
   PATH="$mock_directory:$PATH" MISSING_ENCODER="$encoder" assert_fails ffmpeg_encoders_available
 done
 
+cat >"$mock_directory/railway" <<'EOF'
+#!/usr/bin/env bash
+printf '%s\n' "${TEST_RAILWAY_VERSION:-railway 5.44.0}"
+EOF
+chmod +x "$mock_directory/railway"
+PATH="$mock_directory:$PATH" railway_supports_hosted_mcp
+for version in 'railway 5.43.9' 'railway 4.99.0' 'unrecognised output'; do
+  PATH="$mock_directory:$PATH" TEST_RAILWAY_VERSION="$version" assert_fails railway_supports_hosted_mcp
+done
+PATH="$mock_directory:$PATH" TEST_RAILWAY_VERSION='railway 6.0.0' railway_supports_hosted_mcp
+
 printf 'verification helper tests passed (%d assertions)\n' "$test_count"

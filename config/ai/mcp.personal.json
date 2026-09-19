@@ -1,0 +1,9 @@
+{
+  "railway": {
+    "command": "railway",
+    "args": ["mcp"]
+  },
+  "linear": {
+    "url": "https://mcp.linear.app/mcp"
+  }
+}
