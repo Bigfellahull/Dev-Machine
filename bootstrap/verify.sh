@@ -335,6 +335,17 @@ else
 fi
 
 check_managed_file \
+  "$DEV_MACHINE_ROOT/config/shell/dev-machine.sh" \
+  "$managed_shell_config" \
+  "managed shell configuration is current"
+
+if [ -r "$HOME/.local/share/blesh/ble.sh" ]; then
+  check_version ble.sh bash "$HOME/.local/share/blesh/ble.sh" --version
+else
+  fail "ble.sh is not installed"
+fi
+
+check_managed_file \
   "$DEV_MACHINE_ROOT/config/starship.toml" \
   "$HOME/.config/starship.toml" \
   "Starship configuration is current"

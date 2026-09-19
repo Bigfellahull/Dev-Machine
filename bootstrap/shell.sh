@@ -5,6 +5,8 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=bootstrap/lib.sh
 . "$SCRIPT_DIR/lib.sh"
 
+"$SCRIPT_DIR/blesh.sh"
+
 log "Installing shell, tmux and non-identity Git configuration"
 install_user_file \
   "$DEV_MACHINE_ROOT/config/shell/dev-machine.sh" \

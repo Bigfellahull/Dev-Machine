@@ -19,7 +19,8 @@ scripts manage and how updates work.
 7. `ocr.sh` — pinned work-only Tesseract runtime.
 8. `ai-tools.sh` — official native Codex, Claude and Grok installers, shared
    skills and the personal-only Railway skill.
-9. `shell.sh` — PATH, mise activation, tmux, safe Git defaults and `db`.
+9. `shell.sh` — ble.sh installation through `blesh.sh`, PATH, mise activation,
+   tmux, safe Git defaults and `db`.
 10. `docker-bridge.sh` — OrbStack's supported macOS Docker command link and
     work-only API tunnel service installation through `orb/docker-api.sh`.
 
@@ -123,6 +124,23 @@ Alt-C directory navigation and fuzzy completion, and enables zoxide's `z` and
 `zi` commands. Ctrl-T uses bat for syntax-highlighted file previews. Ubuntu's
 `bash-completion` package provides command-specific tab completion.
 
+Both profiles install ble.sh from its upstream prebuilt nightly archive into
+`~/.local/share/blesh`. Provisioning refreshes it on each run. Interactive Bash
+loads it for inline autosuggestions and syntax highlighting, uses its fzf
+compatibility modules, and attaches the line editor after Starship is configured.
+Non-interactive shells do not load ble.sh. Personal ble.sh settings can go in
+`~/.blerc`, which bootstrap leaves untouched.
+
+To install or refresh just ble.sh and the shared shell integration, run these
+commands inside Ubuntu from an up-to-date checkout:
+
+```bash
+cd ~/code/dev-machine
+bash bootstrap/blesh.sh
+install -Dm644 config/shell/dev-machine.sh ~/.config/dev-machine/shell.sh
+exec bash
+```
+
 The work profile additionally installs bzip2, FFmpeg, Ghostscript, Pandoc,
 Poppler utilities, qpdf, Redis client tools and WeasyPrint's native Pango and
 HarfBuzz libraries from Ubuntu. bzip2 supports extracting Microsoft's sqlcmd
@@ -135,7 +153,7 @@ implementation of sqlcmd uses a separate vendor installation path: bootstrap
 downloads Microsoft's latest official ARM64 archive and verifies the
 publisher's SHA-256 digest before installation. The AI
 CLIs remain on their official native installers. After mise bootstraps itself,
-the Azure Artifacts Credential Provider, SqlPackage, sqlcmd, pinned Tesseract
+ble.sh, the Azure Artifacts Credential Provider, SqlPackage, sqlcmd, pinned Tesseract
 and the three AI CLIs are the non-apt, non-mise installation paths.
 
 Work installs pdfminer.six through Ubuntu's `python3-pdfminer` package. Use
