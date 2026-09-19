@@ -366,7 +366,21 @@ if command -v dotnet >/dev/null 2>&1; then
     pass ".NET SDK 8 is not installed"
   fi
 
-  workload_output=$(dotnet workload list 2>/dev/null || true)
+  if [ "$profile" = work ]; then
+    if [ "$(work_dotnet --version 2>/dev/null)" = 10.0.400 ]; then
+      pass "pinned .NET build SDK 10.0.400 is installed"
+    else
+      fail "pinned .NET build SDK 10.0.400 is missing"
+    fi
+    if [ "$(work_dotnet workload --version 2>/dev/null)" = 10.0.400.1 ]; then
+      pass "pinned .NET build workload set 10.0.400.1 is installed"
+    else
+      fail "pinned .NET build workload set 10.0.400.1 is missing"
+    fi
+    workload_output=$(work_dotnet workload list 2>/dev/null || true)
+  else
+    workload_output=$(dotnet workload list 2>/dev/null || true)
+  fi
   if printf '%s\n' "$workload_output" | grep -Eq '^[[:space:]]*wasm-tools[[:space:]]'; then
     if [ "$profile" = work ]; then
       pass ".NET wasm-tools workload is installed for work"

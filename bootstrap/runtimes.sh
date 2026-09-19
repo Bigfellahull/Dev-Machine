@@ -89,8 +89,8 @@ elif [ -n "$sqlpackage_version" ]; then
 fi
 
 if [ "$DEV_INSTALL_DOTNET_WASM_TOOLS" -eq 1 ]; then
-  log "Installing the .NET wasm-tools workload for the work profile"
-  "$mise" exec -- dotnet workload install wasm-tools
+  log "Installing the pinned .NET build workload for the work profile"
+  work_dotnet workload install wasm-tools --version 10.0.400.1
 elif "$mise" exec -- dotnet workload list 2>/dev/null \
   | grep -Eq '^[[:space:]]*wasm-tools[[:space:]]'; then
   log "Removing the work-only .NET wasm-tools workload"

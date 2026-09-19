@@ -14,7 +14,7 @@ touch "$TEST_INSTALLED_TOOLS" "$TEST_TOOL_LOG"
 export TEST_BOOTSTRAP_ROOT="$fixture/repo"
 mkdir -p "$TEST_BOOTSTRAP_ROOT/config"
 cp -R "$TEST_ROOT/bootstrap" "$TEST_ROOT/profiles" "$TEST_BOOTSTRAP_ROOT/"
-cp -R "$TEST_ROOT/config/ai" "$TEST_ROOT/config/mise" "$TEST_BOOTSTRAP_ROOT/config/"
+cp -R "$TEST_ROOT/config/ai" "$TEST_ROOT/config/mise" "$TEST_ROOT/config/dotnet" "$TEST_BOOTSTRAP_ROOT/config/"
 cp "$TEST_ROOT/config/rust-toolchain" "$TEST_BOOTSTRAP_ROOT/config/"
 
 cat >"$fixture/bash-env" <<'EOF'
@@ -70,6 +70,8 @@ run_module work runtimes
 assert_contains "$(cat "$TEST_TOOL_LOG")" 'exec -- dotnet tool install --global Microsoft.SqlPackage'
 assert_contains "$(cat "$TEST_TOOL_LOG")" 'uninstall --all railway'
 assert_contains "$(cat "$TEST_TOOL_LOG")" 'exec -- rustup toolchain install 1.98.0 --profile minimal'
+assert_contains "$(cat "$TEST_TOOL_LOG")" 'exec dotnet@10.0.400 -- dotnet workload install wasm-tools --version 10.0.400.1'
+assert_contains "$(cat "$fixture/home/.config/mise/conf.d/dev-machine-work.toml")" 'dotnet = ["10.0.400", "10"]'
 run_module work ai-tools
 [ ! -e "$fixture/home/.agents/skills/use-railway" ] || test_fail "Railway skill leaked into work"
 

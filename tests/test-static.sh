@@ -176,6 +176,13 @@ if find config/ai/skills -mindepth 1 -maxdepth 1 -type d ! -name codebase-sweep 
 fi
 
 grep -Eq '^dotnet[[:space:]]*=[[:space:]]*"10"$' config/mise/config.toml
+grep -Fq 'dotnet = ["10.0.400", "10"]' config/mise/work.toml
+grep -Fq 'work_dotnet workload install wasm-tools --version 10.0.400.1' bootstrap/runtimes.sh
+grep -Fq 'pinned .NET build SDK 10.0.400 is missing' bootstrap/verify.sh
+grep -Fq 'pinned .NET build workload set 10.0.400.1 is missing' bootstrap/verify.sh
+grep -Fq 'work_dotnet --version' bootstrap/verify.sh
+grep -Fq 'work_dotnet workload --version' bootstrap/verify.sh
+grep -Fq 'work_dotnet workload list' bootstrap/verify.sh
 grep -Eq '^starship[[:space:]]*=[[:space:]]*"latest"$' config/mise/config.toml
 grep -Fq 'fzf --bash' config/shell/dev-machine.sh
 grep -Fq 'zoxide init bash' config/shell/dev-machine.sh

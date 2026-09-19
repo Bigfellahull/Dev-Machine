@@ -77,9 +77,17 @@ ICU provides Unicode and locale-aware globalisation. LTTng-UST supports .NET's
 Linux diagnostic and tracing pipeline; neither package installs another runtime
 or background service.
 
-The `wasm-tools` workload is installed only when the work profile is selected.
-Projects control SDK selection through `global.json`; an exact SDK version
-with `rollForward: disable` must exist or be updated before that project builds.
+The work profile preserves SDK `10.0.400` alongside the moving .NET 10 alias for
+projects that request that exact SDK. It installs `wasm-tools` from workload
+set `10.0.400.1` for that SDK. Workload installation and verification run from
+`config/dotnet/work`, whose `global.json` selects `10.0.400` with roll-forward
+disabled, independently of the caller's project. The verifier checks the selected
+SDK and workload set without automatically installing missing SDKs. The explicit
+mise version retains the build baseline alongside the moving alias.
+Without a project `global.json`, .NET selects the highest installed SDK.
+Personal machines retain the moving .NET 10 default without Wasm workloads.
+Projects still control SDK selection through `global.json`; keep the work
+build SDK and workload pins aligned when updating a supported project baseline.
 
 Java is not installed.
 

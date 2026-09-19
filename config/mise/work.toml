@@ -1,4 +1,5 @@
 [tools]
+dotnet = ["10.0.400", "10"]
 rust = { version = "latest", profile = "default" }
 syft = "latest"
 uv = "latest"

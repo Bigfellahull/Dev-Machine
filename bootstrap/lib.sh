@@ -52,6 +52,12 @@ require_command() {
   command -v "$1" >/dev/null 2>&1 || die "Required command not found: $1"
 }
 
+# Run .NET with the work SDK policy, independently of the caller's global.json.
+work_dotnet() (
+  cd "$DEV_MACHINE_ROOT/config/dotnet/work" || return 1
+  MISE_AUTO_INSTALL=false "$HOME/.local/bin/mise" exec dotnet@10.0.400 -- dotnet "$@"
+)
+
 require_target_ubuntu() {
   [ "$(uname -s)" = Linux ] || die "Bootstrap must run inside Linux, not $(uname -s)."
   [ -r /etc/os-release ] || die "Cannot identify the Linux distribution."
