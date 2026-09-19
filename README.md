@@ -162,6 +162,8 @@ All remaining commands run **inside Ubuntu**, except where marked otherwise.
 
 #### Work only
 
+- [ ] Complete [Windows native build commissioning](docs/windows-builds.md) after creating or restoring the Parallels Windows VM. Run `orbstack-windows-build provision` and `orbstack-windows-build verify` inside Ubuntu before a project needs Windows native compilation.
+
 - [ ] Sign into Azure with `az login`, select the intended tenant/subscription and confirm it with `az account show`.
 - [ ] In a project using private Azure Artifacts feeds, run `dotnet restore --interactive` and complete the work account flow. The credential provider is installed already.
 - [ ] For projects using WASM, restore the required workload for the project's selected SDK; bootstrap's global workload does not cover every pinned SDK.

@@ -22,6 +22,11 @@ Use a distinct database project name and published ports when the experiment
 needs independent data: [database scopes](docker.md#isolation-model) do not
 include the VM name.
 
+Work clones also use the same Parallels Windows VM as their primary by default.
+Cloning Ubuntu does not clone Windows; Windows toolchain changes affect every
+Ubuntu VM using that Windows destination. See [Windows build commissioning](windows-builds.md)
+for selecting a separate Windows VM.
+
 ## Lost primary Ubuntu machine
 
 OrbStack Docker state is separate from the VM. If only the VM was lost, its

@@ -1,0 +1,30 @@
+#!/usr/bin/env bash
+# Commission or verify the pinned Windows Rust target from the work development VM.
+set -Eeuo pipefail
+
+action=${1:-verify}
+vm=${2:-Windows 11}
+if [ "$action" = --help ]; then
+  echo "Usage: orbstack-windows-build provision|verify [VM_NAME]"
+  echo "Requires Parallels, a running Windows VM, Git Bash, rustup and Visual Studio 2026 x64 Build Tools."
+  exit 0
+fi
+case "$action" in
+  provision|verify) ;;
+  *) echo "ERROR: Choose provision or verify." >&2; exit 1 ;;
+esac
+[ "$#" -le 2 ] || { echo "ERROR: Too many arguments." >&2; exit 1; }
+[ "$(<"$HOME/.config/dev-machine/profile")" = work ] \
+  || { echo "ERROR: Windows build commissioning is work-only." >&2; exit 1; }
+version=$(<"$HOME/.local/share/dev-machine/rust-toolchain")
+[[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] \
+  || { echo "ERROR: Invalid managed Rust toolchain version." >&2; exit 1; }
+git_bash='C:\Program Files\Git\bin\bash.exe'
+developer='C:\Program Files (x86)\Microsoft Visual Studio\18\BuildTools\Common7\Tools\VsDevCmd.bat'
+if [ "$action" = provision ]; then
+  mac prlctl exec "$vm" --current-user "$git_bash" -lc \
+    "rustup toolchain install $version --profile minimal --target x86_64-pc-windows-msvc" </dev/null
+fi
+check="rustup run $version rustc --version && rustup target list --toolchain $version --installed | grep -Fx x86_64-pc-windows-msvc && command -v dumpbin.exe"
+mac prlctl exec "$vm" --current-user cmd.exe /a /d /c \
+  "call \"$developer\" -arch=x64 -host_arch=x64 && \"$git_bash\" -lc \"$check\"" </dev/null

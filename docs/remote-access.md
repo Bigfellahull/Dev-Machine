@@ -56,9 +56,10 @@ tmux new -As dev
 ```
 
 Interactive Bash shells use the same managed Starship prompt as the Air's zsh
-session. The tmux configuration advertises RGB colour and extended keys and
-allows terminal escape-sequence passthrough so remote AI TUIs retain Ghostty's
-colour and notification support. The managed `finish-dev` Bash alias runs
+session. The tmux configuration advertises RGB colour, always reports extended
+keys in CSI-u format to preserve shortcuts such as Shift+Enter, and allows
+terminal escape-sequence passthrough so remote AI TUIs retain Ghostty's colour
+and notification support. The managed `finish-dev` Bash alias runs
 `tmux kill-session` to end the attached session when it is no longer needed.
 
 The tmux server survives Air sleep, Wi-Fi changes and SSH disconnects while

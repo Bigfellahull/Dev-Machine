@@ -10,6 +10,7 @@ export DEV_MACHINE_ROOT
 
 # shellcheck disable=SC2034
 DEV_WORK_APT_PACKAGES=(
+  binutils-mingw-w64-x86-64
   bzip2
   cmake
   ffmpeg

@@ -38,12 +38,19 @@ else
 fi
 
 if [ "${#compose_command[@]}" -gt 0 ]; then
-  for engine in postgres mssql redis; do
-    "${compose_command[@]}" \
-      --env-file docker/images.env \
-      --env-file docker/db.env.example \
-      -f "docker/$engine/compose.yaml" config --quiet
-  done
+  (
+    set -a
+    # Public fixture values are scoped to this parser invocation, including the Mac bridge.
+    # shellcheck disable=SC1091
+    . ./docker/images.env
+    # shellcheck disable=SC1091
+    . ./docker/db.env.example
+    export ORBENV="${ORBENV:+$ORBENV:}POSTGRES_IMAGE:MSSQL_IMAGE:REDIS_IMAGE:POSTGRES_USER:POSTGRES_PASSWORD:POSTGRES_DB:POSTGRES_PORT:MSSQL_SA_PASSWORD:MSSQL_PORT:REDIS_PASSWORD:REDIS_PORT"
+    for engine in postgres mssql redis; do
+      "${compose_command[@]}" --env-file /dev/null --project-name bootstrap-check \
+        -f - config --quiet < "docker/$engine/compose.yaml"
+    done
+  )
   printf 'Compose definitions: ok\n'
 else
   printf 'Compose definitions: skipped (Compose parser unavailable)\n'
@@ -176,7 +183,8 @@ grep -Fq 'starship init bash' config/shell/dev-machine.sh
 grep -Fq "alias finish-dev='tmux kill-session'" config/shell/dev-machine.sh
 grep -Fq 'config/starship.toml' bootstrap/shell.sh
 grep -Fq 'allow-passthrough on' config/tmux/tmux.conf
-grep -Fq 'extended-keys on' config/tmux/tmux.conf
+grep -Fq 'extended-keys always' config/tmux/tmux.conf
+grep -Fq 'extended-keys-format csi-u' config/tmux/tmux.conf
 grep -Fq "terminal-features 'xterm*:extkeys'" config/tmux/tmux.conf
 grep -Fq "terminal-features ',xterm-ghostty:RGB'" config/tmux/tmux.conf
 grep -Fq "status-style 'bg=default,fg=colour8'" config/tmux/tmux.conf

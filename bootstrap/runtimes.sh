@@ -46,6 +46,12 @@ eval "$("$mise" activate bash)"
 "$mise" install --yes --minimum-release-age 0s
 "$mise" upgrade --yes --prune --minimum-release-age 0s
 
+if [ "$DEV_INSTALL_WORK_TOOLS" -eq 1 ]; then
+  rust_toolchain=$(<"$DEV_MACHINE_ROOT/config/rust-toolchain")
+  log "Installing the work native-build Rust toolchain alongside the current default"
+  "$mise" exec -- rustup toolchain install "$rust_toolchain" --profile minimal
+fi
+
 credential_provider_package=Microsoft.Artifacts.CredentialProvider.NuGet.Tool
 credential_provider_version=$(
   "$mise" exec -- dotnet tool list --global \

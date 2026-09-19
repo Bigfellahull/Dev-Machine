@@ -12,6 +12,7 @@ if ! command -v mac >/dev/null 2>&1; then
 fi
 
 "$DEV_MACHINE_ROOT/orb/docker-api.sh"
+"$DEV_MACHINE_ROOT/orb/windows-build.sh"
 
 if command -v docker >/dev/null 2>&1; then
   info "A docker command already exists; no link was changed."

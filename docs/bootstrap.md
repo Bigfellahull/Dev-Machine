@@ -87,6 +87,13 @@ toolchain. mise uses rustup underneath, so project Rust version files and the
 normal Cargo layout continue to work without a separate bootstrap installer.
 Personal machines do not install Rust.
 
+Work additionally installs the native-build compiler in `config/rust-toolchain`
+alongside that default. The verifier checks it explicitly. Work's cross-binutils
+package provides `x86_64-w64-mingw32-objdump` for inspecting returned Windows x64
+binaries on Ubuntu ARM64. Follow [Windows commissioning](windows-builds.md) to
+install the corresponding pinned target in Parallels; Linux installation alone
+does not configure Windows.
+
 The work profile installs Microsoft's Azure Artifacts Credential Provider as a
 global .NET tool from NuGet.org. Provisioning installs or updates to the latest
 stable release without authenticating. Authentication remains runtime state;

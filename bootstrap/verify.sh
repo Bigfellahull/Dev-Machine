@@ -157,6 +157,7 @@ if [ "$profile" = work ]; then
     uv
     weasyprint
     tesseract
+    x86_64-w64-mingw32-objdump
   )
 elif [ "$profile" = personal ]; then
   required_commands+=(railway)
@@ -249,6 +250,12 @@ command -v node >/dev/null 2>&1 && check_version node node --version
 command -v python >/dev/null 2>&1 && check_version python python --version
 if [ "$profile" = work ]; then
   command -v rustc >/dev/null 2>&1 && check_version rustc rustc --version
+  rust_toolchain=$(<"$DEV_MACHINE_ROOT/config/rust-toolchain")
+  if rustup run "$rust_toolchain" rustc --version >/dev/null 2>&1; then
+    pass "pinned work Rust toolchain is installed"
+  else
+    fail "pinned work Rust toolchain is missing; rerun provisioning"
+  fi
   command -v cargo >/dev/null 2>&1 && check_version cargo cargo --version
 fi
 command -v age >/dev/null 2>&1 && check_version age age --version
@@ -456,7 +463,7 @@ for database_engine in postgres mssql redis; do
 done
 
 if [ "$profile" = personal ]; then
-  for work_only_command in az cargo ffmpeg gs pandoc pdftotext qpdf redis-cli rustc sqlcmd sqlpackage syft tesseract uv weasyprint orbstack-docker-api; do
+  for work_only_command in az cargo ffmpeg gs pandoc pdftotext qpdf redis-cli rustc sqlcmd sqlpackage syft tesseract uv weasyprint orbstack-docker-api orbstack-windows-build x86_64-w64-mingw32-objdump; do
     if command -v "$work_only_command" >/dev/null 2>&1; then
       fail "$work_only_command is installed outside the work profile"
     else
@@ -502,6 +509,12 @@ if command -v mac >/dev/null 2>&1; then
       fi
     else
       verify_warn "work Docker API tunnel is not commissioned; see docs/docker-api.md"
+    fi
+    check_command orbstack-windows-build
+    if orbstack-windows-build verify >/dev/null 2>&1; then
+      pass "Parallels Windows native-build toolchain is ready"
+    else
+      verify_warn "Windows build toolchain is not commissioned; see docs/windows-builds.md"
     fi
   fi
   if mac docker version >/dev/null 2>&1; then
