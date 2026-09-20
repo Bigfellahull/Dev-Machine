@@ -13,6 +13,7 @@ cat >"$fixture/home/.local/share/blesh/ble.sh" <<'EOF'
 printf 'ble-load %s\n' "$*"
 BLE_VERSION=test
 ble-import() { printf 'ble-import %s\n' "$*"; }
+ble-face() { :; }
 ble-attach() { printf 'ble-attach\n'; }
 EOF
 

@@ -54,5 +54,7 @@ if command -v starship >/dev/null 2>&1; then
 fi
 
 if [[ $- == *i* && -n ${BLE_VERSION-} ]]; then
+  ble-face -s auto_complete fg=8
+  ble-face -s filename_directory underline
   ble-attach
 fi
