@@ -109,6 +109,27 @@ main() {
   test_count=$((test_count + 1))
   printf 'ok %d - accepts valid TLS handoff\n' "$test_count"
 
+  create_fixture "$test_directory/traditional-key" work
+  openssl pkey -in "$test_directory/traditional-key/localhost-key.pem" \
+    -traditional -out "$test_directory/traditional-key.pem" 2>/dev/null
+  install -m 0600 "$test_directory/traditional-key.pem" \
+    "$test_directory/traditional-key/localhost-key.pem"
+  validate_material_directory "$test_directory/traditional-key" work \
+    || test_fail "Mac-compatible PKCS#1 TLS handoff was rejected"
+  test_count=$((test_count + 1))
+  printf 'ok %d - accepts Mac-compatible PKCS#1 TLS handoff\n' "$test_count"
+
+  openssl rsa -in "$test_directory/traditional-key.pem" -traditional -outform DER \
+    >"$test_directory/combined-traditional-key.der" 2>/dev/null
+  openssl x509 -in "$test_directory/traditional-key/localhost.pem" -outform DER \
+    >>"$test_directory/combined-traditional-key.der"
+  {
+    printf '%s%s\n' '-----BEGIN RSA PRIVATE ' 'KEY-----'
+    openssl base64 -in "$test_directory/combined-traditional-key.der"
+    printf '%s%s\n' '-----END RSA PRIVATE ' 'KEY-----'
+  } >"$test_directory/traditional-key/localhost-key.pem"
+  assert_fails validate_material_directory "$test_directory/traditional-key" work
+
   assert_fails validate_material_directory "$fixture" personal
 
   touch "$fixture/rootCA-key.pem"

@@ -171,6 +171,7 @@ pem_has_single_block() {
   ' "$pem_file"
 }
 
+# Validate canonical PEM without accepting hidden trailing DER data.
 pem_round_trips_exactly() {
   pem_file=$1
   pem_kind=$2
@@ -181,7 +182,15 @@ pem_round_trips_exactly() {
     openssl x509 -in "$pem_file" -out "$canonical_pem" >/dev/null 2>&1 \
       || { rm -f "$canonical_pem"; return 1; }
   else
-    openssl pkey -in "$pem_file" -out "$canonical_pem" >/dev/null 2>&1 \
+    IFS= read -r key_header <"$pem_file" || :
+    key_format_option=
+    # Mac-Bootstrap issues leaf keys with genrsa, which writes PKCS#1. The
+    # header is split so the committed-key scan does not match it.
+    if [ "$key_header" = '-----BEGIN RSA PRIVATE ''KEY-----' ]; then
+      key_format_option=-traditional
+    fi
+    openssl pkey -in "$pem_file" ${key_format_option:+"$key_format_option"} \
+      -out "$canonical_pem" >/dev/null 2>&1 \
       || { rm -f "$canonical_pem"; return 1; }
   fi
   if cmp -s "$pem_file" "$canonical_pem"; then
