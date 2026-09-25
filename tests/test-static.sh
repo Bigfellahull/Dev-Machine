@@ -23,7 +23,7 @@ if command -v shellcheck >/dev/null 2>&1; then
       printf '%s\n' "$file"
     fi
   done)
-  shellcheck "${shell_scripts[@]}" config/shell/dev-machine.sh
+  shellcheck "${shell_scripts[@]}" config/shell/dev-machine.sh config/shell/login.sh
   printf 'ShellCheck: ok\n'
 else
   printf 'ShellCheck: skipped (not installed)\n'
@@ -89,7 +89,7 @@ grep -Fq 'sudo mac link docker' bootstrap/docker-bridge.sh
 bootstrap/verify.sh --help >/dev/null
 grep -Fq 'AI CLI checks were intentionally skipped' bootstrap/verify.sh
 grep -Fq ". \"\$managed_shell_config\"" bootstrap/verify.sh
-grep -Fq 'interactive shells load the managed environment' bootstrap/verify.sh
+grep -Fq 'if bash_login_loads_environment' bootstrap/verify.sh
 [ "$(sed -n '1p' config/mise/config.toml)" = 'min_version = "2026.9.0"' ]
 if sed -n '/^\[settings\]/,$p' config/mise/config.toml | grep -Eq '^min_version[[:space:]]*='; then
   printf 'mise min_version must be a top-level key.\n' >&2
@@ -175,7 +175,7 @@ if find config/ai/skills -mindepth 1 -maxdepth 1 -type d ! -name codebase-sweep 
   exit 1
 fi
 
-grep -Eq '^dotnet[[:space:]]*=[[:space:]]*"10"$' config/mise/config.toml
+grep -Eq '^dotnet[[:space:]]*=[[:space:]]*"10"$' config/mise/personal.toml
 grep -Fq 'dotnet = ["10.0.400", "10"]' config/mise/work.toml
 grep -Fq 'work_dotnet workload install wasm-tools --version 10.0.400.1' bootstrap/runtimes.sh
 grep -Fq 'pinned .NET build SDK 10.0.400 is missing' bootstrap/verify.sh

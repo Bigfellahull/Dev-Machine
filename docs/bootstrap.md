@@ -52,10 +52,12 @@ owns versioned development runtimes and standalone CLIs. The bootstrap does not
 also install a mise-owned command with apt, pipx, `go install`, rustup or an
 additional vendor repository.
 
-The common mise configuration manages .NET 10, the latest Go, Node.js and
+The common mise configuration manages the latest Go, Node.js and
 Python releases, age, bat, fd, fzf, Git LFS, GitHub CLI, ripgrep, ShellCheck,
-sqlc, Starship and zoxide. Profile fragments add tools through mise's registry
-and `pipx:` backend. This replaces separate `nvm`, `pyenv`, `asdf`, Go-manager
+sqlc, Starship and zoxide. Profile fragments select .NET SDKs and add tools
+through mise's registry and `pipx:` backend. Tool declarations stay separate
+because the global `config.toml` takes precedence over `conf.d` fragments.
+This replaces separate `nvm`, `pyenv`, `asdf`, Go-manager
 and standalone CLI update paths. A project `mise.toml`, `.nvmrc`, `.node-version`, `.python-version`,
 `.go-version`, `global.json`, or Go toolchain directive can override the global
 default where supported.
@@ -132,6 +134,13 @@ Alt-C directory navigation and fuzzy completion, and enables zoxide's `z` and
 `zi` commands. Ctrl-T uses bat for syntax-highlighted file previews. Ubuntu's
 `bash-completion` package provides command-specific tab completion.
 
+Provisioning connects the managed environment to `.bashrc` and the first
+readable Bash login file: `.bash_profile`, `.bash_login` or `.profile`. If none
+exists, it creates `.profile`. Existing contents are preserved. Interactive
+login shells, including OrbStack terminals, load mise and the managed PATH even
+when their login file does not source `.bashrc`. Verification checks startup in
+a fresh Bash login shell as well as checking the installed tools.
+
 Both profiles install ble.sh from its upstream prebuilt nightly archive into
 `~/.local/share/blesh`. Provisioning refreshes it on each run. Interactive Bash
 loads it for inline autosuggestions and syntax highlighting, uses its fzf
@@ -145,8 +154,9 @@ commands inside Ubuntu from an up-to-date checkout:
 ```bash
 cd ~/code/dev-machine
 bash bootstrap/blesh.sh
-install -Dm644 config/shell/dev-machine.sh ~/.config/dev-machine/shell.sh
-exec bash
+source bootstrap/lib.sh
+install_bash_startup
+exec bash -l
 ```
 
 The work profile additionally installs bzip2, FFmpeg, Ghostscript, Pandoc,

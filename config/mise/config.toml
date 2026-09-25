@@ -3,7 +3,6 @@ min_version = "2026.9.0"
 [tools]
 age = "latest"
 bat = "latest"
-dotnet = "10"
 fd = "latest"
 fzf = "latest"
 git-lfs = "latest"

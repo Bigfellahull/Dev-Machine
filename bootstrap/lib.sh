@@ -52,6 +52,29 @@ require_command() {
   command -v "$1" >/dev/null 2>&1 || die "Required command not found: $1"
 }
 
+# Select the first readable Bash login file without hiding an existing profile.
+bash_login_file() {
+  local name
+  for name in .bash_profile .bash_login .profile; do
+    if [ -r "$HOME/$name" ]; then
+      printf '%s\n' "$HOME/$name"
+      return 0
+    fi
+  done
+  printf '%s\n' "$HOME/.profile"
+}
+
+# Connect both Bash startup paths while preserving existing user configuration.
+install_bash_startup() {
+  install_user_file "$DEV_MACHINE_ROOT/config/shell/dev-machine.sh" "$HOME/.config/dev-machine/shell.sh"
+  install_user_file "$DEV_MACHINE_ROOT/config/shell/login.sh" "$HOME/.config/dev-machine/login.sh"
+  # The hooks expand HOME in the new shell, not during provisioning.
+  # shellcheck disable=SC2016
+  ensure_line "$HOME/.bashrc" '[ -r "$HOME/.config/dev-machine/shell.sh" ] && . "$HOME/.config/dev-machine/shell.sh"'
+  # shellcheck disable=SC2016
+  ensure_line "$(bash_login_file)" '[ -r "$HOME/.config/dev-machine/login.sh" ] && . "$HOME/.config/dev-machine/login.sh"'
+}
+
 # Run .NET with the work SDK policy, independently of the caller's global.json.
 work_dotnet() (
   cd "$DEV_MACHINE_ROOT/config/dotnet/work" || return 1

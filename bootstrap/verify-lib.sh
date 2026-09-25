@@ -1,5 +1,13 @@
 #!/usr/bin/env bash
 
+# Check login startup independently of the verifier's repaired environment.
+bash_login_loads_environment() (
+  cd "$HOME" || return 1
+  # shellcheck disable=SC2016
+  env -u BASH_ENV -u ENV DEV_MACHINE_SHELL_LOADED= PATH=/usr/bin:/bin \
+    /bin/bash -lic 'test "${DEV_MACHINE_SHELL_LOADED:-}" = 1' </dev/null
+)
+
 capture_version() {
   version_output=$("$@" 2>&1) || return 1
   version_output=$(printf '%s\n' "$version_output" | head -n 1)

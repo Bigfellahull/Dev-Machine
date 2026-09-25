@@ -58,3 +58,7 @@ if [[ $- == *i* && -n ${BLE_VERSION-} ]]; then
   ble-face -s filename_directory underline
   ble-attach
 fi
+
+# Login profiles may already have loaded this file through .bashrc.
+# shellcheck disable=SC2034
+DEV_MACHINE_SHELL_LOADED=1

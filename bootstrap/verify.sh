@@ -329,15 +329,26 @@ fi
 # shellcheck disable=SC2016
 shell_source_line='[ -r "$HOME/.config/dev-machine/shell.sh" ] && . "$HOME/.config/dev-machine/shell.sh"'
 if grep -Fqx "$shell_source_line" "$HOME/.bashrc" 2>/dev/null; then
-  pass "interactive shells load the managed environment"
+  pass ".bashrc contains the managed environment hook"
 else
-  fail "interactive shells do not load $managed_shell_config"
+  fail ".bashrc does not load $managed_shell_config"
+fi
+
+if bash_login_loads_environment >/dev/null 2>&1; then
+  pass "fresh Bash login shells load the managed environment"
+else
+  fail "fresh Bash login shells do not load the managed environment; rerun provisioning"
 fi
 
 check_managed_file \
   "$DEV_MACHINE_ROOT/config/shell/dev-machine.sh" \
   "$managed_shell_config" \
   "managed shell configuration is current"
+
+check_managed_file \
+  "$DEV_MACHINE_ROOT/config/shell/login.sh" \
+  "$HOME/.config/dev-machine/login.sh" \
+  "managed login configuration is current"
 
 if [ -r "$HOME/.local/share/blesh/ble.sh" ]; then
   check_version ble.sh bash "$HOME/.local/share/blesh/ble.sh" --version

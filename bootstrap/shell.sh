@@ -8,9 +8,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 "$SCRIPT_DIR/blesh.sh"
 
 log "Installing shell, tmux and non-identity Git configuration"
-install_user_file \
-  "$DEV_MACHINE_ROOT/config/shell/dev-machine.sh" \
-  "$HOME/.config/dev-machine/shell.sh"
+install_bash_startup
 install_user_file \
   "$DEV_MACHINE_ROOT/config/tmux/tmux.conf" \
   "$HOME/.tmux.conf"
@@ -39,9 +37,6 @@ install_user_file \
   0755
 
 printf '%s\n' "$DEV_MACHINE_PROFILE" >"$HOME/.config/dev-machine/profile"
-# The literal line must expand HOME when a future shell reads .bashrc.
-# shellcheck disable=SC2016
-ensure_line "$HOME/.bashrc" '[ -r "$HOME/.config/dev-machine/shell.sh" ] && . "$HOME/.config/dev-machine/shell.sh"'
 
 git_include="$HOME/.config/git/dev-machine.inc"
 if ! git config --global --get-all include.path 2>/dev/null | grep -Fqx "$git_include"; then
