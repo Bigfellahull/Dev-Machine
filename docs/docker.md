@@ -26,7 +26,7 @@ There is no nested daemon. `bootstrap/docker-bridge.sh`
 uses OrbStack's supported `mac link docker` only when a Linux `docker` command is
 absent. The `db` helper remains explicit and calls `mac docker` itself.
 
-Work applications that consume the Docker API directly can use the separately
+Work or personal applications that consume the Docker API directly can use the separately
 commissioned [Docker API tunnel](docker-api.md). Its endpoint is scoped to the
 application command and does not change the database helper's command bridge.
 
@@ -56,6 +56,31 @@ db start postgres --project project-b --env-file ~/.config/dev-machine/project-b
 
 Ports bind to macOS loopback rather than all LAN interfaces. Ubuntu reaches them
 through `docker.orb.internal`.
+
+## Check the database endpoint
+
+`db connection` prints the normal `docker.orb.internal` endpoint without the
+password. Test it from Ubuntu with the actual published port before copying it
+into project configuration. The Compose definitions in this repository bind
+published ports to the mini's loopback interface.
+
+For PostgreSQL, replacing `PUBLISHED_PORT` with the configured number:
+
+```bash
+pg_isready -h docker.orb.internal -p PUBLISHED_PORT
+pg_isready -h host.orb.internal -p PUBLISHED_PORT
+```
+
+If the first route refuses the connection but the host route succeeds, use
+`host.orb.internal` in that project's private settings and verify a real login
+with `psql`. Reachability depends on the published binding and OrbStack version;
+neither a healthy container nor a printed connection string proves the route.
+If neither works, inspect `db status`, the project's published ports and its
+container logs. Do not widen the listener to the LAN simply to bypass a failed
+local route. The Air's TablePlus tunnel still terminates on the mini at
+`127.0.0.1:PUBLISHED_PORT`.
+
+See [OrbStack Linux networking](https://docs.orbstack.dev/machines/network).
 
 ## Isolation model
 

@@ -499,7 +499,7 @@ for database_engine in postgres mssql redis; do
 done
 
 if [ "$profile" = personal ]; then
-  for work_only_command in az cargo ffmpeg gs pandoc pdftotext qpdf redis-cli rustc sqlcmd sqlpackage syft tesseract uv weasyprint orbstack-docker-api orbstack-windows-build x86_64-w64-mingw32-objdump; do
+  for work_only_command in az cargo ffmpeg gs pandoc pdftotext qpdf redis-cli rustc sqlcmd sqlpackage syft tesseract uv weasyprint orbstack-windows-build x86_64-w64-mingw32-objdump; do
     if command -v "$work_only_command" >/dev/null 2>&1; then
       fail "$work_only_command is installed outside the work profile"
     else
@@ -509,12 +509,10 @@ if [ "$profile" = personal ]; then
   if /usr/bin/python3 -c 'import pdfminer' >/dev/null 2>&1; then
     fail "pdfminer.six is installed outside the work profile"
   fi
-  for work_state in "$HOME/.config/systemd/user/dev-machine-docker-api.service" \
-    "$HOME/.config/dev-machine/docker-api" "$HOME/.local/share/dev-machine/tesseract"; do
-    if [ -e "$work_state" ] || [ -L "$work_state" ]; then
-      fail "Work-only runtime state remains on personal: $work_state"
-    fi
-  done
+  work_state="$HOME/.local/share/dev-machine/tesseract"
+  if [ -e "$work_state" ] || [ -L "$work_state" ]; then
+    fail "Work-only runtime state remains on personal: $work_state"
+  fi
 fi
 
 for removed_command in 7z 7zz pipx rclone; do
@@ -533,19 +531,34 @@ fi
 
 if command -v mac >/dev/null 2>&1; then
   pass "OrbStack macOS command bridge is available"
-  if [ "$profile" = work ]; then
-    check_command orbstack-docker-api
+  bridge_policy=$(docker_api_bridge_policy) || { fail "Docker API bridge policy is invalid"; bridge_policy=invalid; }
+  if [ "$bridge_policy" = enabled ]; then
+    check_managed_file "$DEV_MACHINE_ROOT/bin/orbstack-docker-api" \
+      "$HOME/.local/bin/orbstack-docker-api" "Docker API helper is current"
     check_managed_file "$DEV_MACHINE_ROOT/config/systemd/dev-machine-docker-api.service" \
-      "$HOME/.config/systemd/user/dev-machine-docker-api.service" "work Docker API service is current"
+      "$HOME/.config/systemd/user/dev-machine-docker-api.service" "Docker API service is current"
     if [ -d "$HOME/.config/dev-machine/docker-api" ]; then
-      if orbstack-docker-api verify; then
-        pass "work Docker API tunnel responds"
+      if "$HOME/.local/bin/orbstack-docker-api" verify; then
+        pass "Docker API tunnel responds"
       else
-        fail "work Docker API tunnel is not usable"
+        fail "Docker API tunnel is not usable"
       fi
     else
-      verify_warn "work Docker API tunnel is not commissioned; see docs/docker-api.md"
+      verify_warn "Opted-in Docker API tunnel is not commissioned; see docs/docker-api.md"
     fi
+  elif [ "$bridge_policy" = disabled ]; then
+    for bridge_path in "$HOME/.local/bin/orbstack-docker-api" \
+      "$HOME/.config/systemd/user/dev-machine-docker-api.service" "$HOME/.config/dev-machine/docker-api"; do
+      if [ -e "$bridge_path" ] || [ -L "$bridge_path" ]; then
+        fail "Disabled Docker API bridge state remains: $bridge_path"
+      fi
+    done
+    if systemctl --user is-active --quiet dev-machine-docker-api.service 2>/dev/null \
+      || systemctl --user is-enabled --quiet dev-machine-docker-api.service 2>/dev/null; then
+      fail "Disabled Docker API bridge service is active or enabled"
+    fi
+  fi
+  if [ "$profile" = work ]; then
     check_command orbstack-windows-build
     if orbstack-windows-build verify >/dev/null 2>&1; then
       pass "Parallels Windows native-build toolchain is ready"

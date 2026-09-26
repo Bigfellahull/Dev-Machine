@@ -1,7 +1,7 @@
 # Bootstrap and authentication
 
 For the provisioning commands and post-provision checklist, begin with the
-[README walkthrough](../README.md#start-here). This guide explains what the
+[VM setup guide](setup.md). This guide explains what the
 scripts manage and how updates work.
 
 ## Module order
@@ -22,7 +22,7 @@ scripts manage and how updates work.
 9. `shell.sh` — ble.sh installation through `blesh.sh`, PATH, mise activation,
    tmux, safe Git defaults and `db`.
 10. `docker-bridge.sh` — OrbStack's supported macOS Docker command link and
-    work-only API tunnel service installation through `orb/docker-api.sh`.
+    opt-in API tunnel service installation for either profile through `orb/docker-api.sh`.
 
 Every module ensures state and can be rerun. Apt installs, managed files, Git
 includes and shell source lines are idempotent. Rerunning also removes managed

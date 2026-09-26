@@ -135,3 +135,18 @@ ensure_line() {
     printf '%s\n' "$line" >>"$target_file"
   fi
 }
+
+# The data-only opt-in is local to this VM and survives repository updates.
+docker_api_bridge_policy() {
+  local flag="$HOME/.config/dev-machine/docker-api-bridge"
+  local value=disabled
+  local parent
+  for parent in "$HOME/.config" "$HOME/.config/dev-machine" "$flag"; do
+    [ ! -L "$parent" ] || { warn "Symlinked Docker API policy path: $parent"; return 1; }
+  done
+  if [ -e "$flag" ]; then
+    [ -f "$flag" ] && [ -O "$flag" ] && [ "$(stat -c %a "$flag")" = 600 ] || { warn "Unsafe Docker API opt-in file: $flag"; return 1; }
+    value=$(cat "$flag") || return 1
+  fi
+  case "$value" in enabled|disabled) printf '%s\n' "$value" ;; *) warn "Docker API opt-in must contain enabled or disabled: $flag"; return 1 ;; esac
+}

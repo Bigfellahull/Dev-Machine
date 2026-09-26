@@ -19,7 +19,7 @@ Usage:
   orbstack-docker-api start|stop|verify
   orbstack-docker-api run COMMAND [ARG...]
 
-Work only. init creates a VM-specific key and imports an already verified
+Opt-in on work or personal. init creates a VM-specific key and imports an already verified
 Mac host-key file. Authorise the printed public key on the matching Mac before
 start. run sets DOCKER_HOST only for its command. See docs/docker-api.md.
 USAGE
@@ -48,7 +48,7 @@ load_config() {
   for private_file in config.json known_hosts id_ed25519; do
     check_private_file "$state_dir/$private_file"
   done
-  jq -e 'type == "object" and .profile == "work" and
+  jq -e --arg profile "$profile" 'type == "object" and .profile == $profile and
     ([.host, .user, .socket, .machine] | all(type == "string" and length > 0))' \
     "$state_dir/config.json" >/dev/null || die "Invalid tunnel configuration"
   mac_host=$(jq -r .host "$state_dir/config.json")
@@ -84,16 +84,28 @@ api_ready() {
 action=${1:---help}
 shift || true
 case "$action" in -h|--help) usage; exit 0 ;; esac
-[ "$(uname -s)" = Linux ] || die "Run inside the work Ubuntu VM"
+[ "$(uname -s)" = Linux ] || die "Run inside the matching Ubuntu VM"
 [ "$(id -u)" -ne 0 ] || die "Run as the development user"
-[ "$(cat "$HOME/.config/dev-machine/profile" 2>/dev/null)" = work ] \
-  || die "Docker API access is enabled only for work"
+profile=$(cat "$HOME/.config/dev-machine/profile" 2>/dev/null)
+case "$profile" in work|personal) ;; *) die "Invalid machine profile" ;; esac
 for parent in "$HOME/.config" "$HOME/.config/dev-machine"; do
   [ -d "$parent" ] && [ ! -L "$parent" ] \
     && [ "$(stat -c %u "$parent")" = "$(id -u)" ] || die "Unsafe configuration directory: $parent"
   parent_mode=$(stat -c %a "$parent")
   (( (8#$parent_mode & 0022) == 0 )) || die "Configuration directory is writable by others: $parent"
 done
+
+flag="$HOME/.config/dev-machine/docker-api-bridge"
+[ ! -L "$flag" ] || die "Symlinked Docker API opt-in file"
+policy=disabled
+if [ -e "$flag" ]; then
+  check_private_file "$flag"
+  policy=$(cat "$flag")
+fi
+case "$policy" in enabled|disabled) ;; *) die "Docker API opt-in must contain enabled or disabled" ;; esac
+if [ "$action" != stop ]; then
+  [ "$policy" = enabled ] || die "Docker API bridge is disabled; opt in using $flag"
+fi
 
 case "$action" in
   init)
@@ -108,10 +120,10 @@ case "$action" in
     trap 'rm -rf "$staging"' EXIT
     cp "$known_hosts" "$staging/known_hosts"
     chmod 600 "$staging/known_hosts"
-    ssh-keygen -q -t ed25519 -N '' -C orbstack-docker-api-work-mini -f "$staging/id_ed25519"
+    ssh-keygen -q -t ed25519 -N '' -C "orbstack-docker-api-$profile-mini" -f "$staging/id_ed25519"
     jq -n --arg host "$mac_host" --arg user "$mac_user" --arg socket "$mac_socket" \
-      --arg machine "$(hostname)" \
-      '{profile: "work", host: $host, user: $user, socket: $socket, machine: $machine}' \
+      --arg machine "$(hostname)" --arg profile "$profile" \
+      '{profile: $profile, host: $host, user: $user, socket: $socket, machine: $machine}' \
       >"$staging/config.json"
     mv "$staging" "$state_dir"
     printf 'Authorise this public key on the matching Mac, then run orbstack-docker-api start:\n'

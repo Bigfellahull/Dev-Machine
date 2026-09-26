@@ -1,6 +1,6 @@
 # Mac mini commissioning checklist
 
-Start with the [README setup walkthrough](../README.md#start-here) for script
+Start with the [VM setup guide](setup.md) for script
 commands, logins and the post-provision checklist. Use this guide for broader
 acceptance checks on a new mini or a deliberate rebuild rehearsal.
 
@@ -19,7 +19,7 @@ Run host commands on the matching Mac mini.
 
 ## Primary machine
 
-After completing the README checklist, run these checks inside Ubuntu.
+After completing the VM setup checklist, run these checks inside Ubuntu.
 
 - [ ] Confirm Ubuntu 26.04 and ARM64, and the correct `~/.config/dev-machine/profile` marker.
 - [ ] Run `bootstrap/verify.sh` with zero failures. Use `--skip-ai` only when AI setup was intentionally skipped. Resolve or account for each warning; warnings do not cause a non-zero exit status.
@@ -29,10 +29,11 @@ After completing the README checklist, run these checks inside Ubuntu.
 - [ ] Validate shared TLS with the development servers those projects use, including browsers on the mini and Air. Check the SSH port forward when browsing a VM service from the Air.
 - [ ] Confirm browser clients trust the required public roots and no CA private key left its issuing mini. Remove temporary certificate handoffs after successful import.
 
+- [ ] For either profile, verify an opted-in [Docker API tunnel](docker-api.md), or confirm disabled bridge state is absent. Ordinary database access does not need it.
+
 ### Work
 
 - [ ] Verify Azure account selection and a private-feed restore using the installed Azure Artifacts Credential Provider.
-- [ ] Commission the [Docker API tunnel](docker-api.md). Run a representative Testcontainers suite and, where used, an Aspire AppHost through the wrapper with the project's additional settings and resource cleanup enabled.
 - [ ] Test SqlPackage BACPAC import/export on ARM64; a successful version check alone does not validate that workflow.
 - [ ] Exercise Rust and PDF/media projects. Confirm `PDFMINER_PYTHON=/usr/bin/python3` where required and run OCR fixtures with Tesseract 5.5.2. Record language-data and native-library versions if results differ.
 - [ ] Confirm Railway and its managed skill are absent.
@@ -40,7 +41,7 @@ After completing the README checklist, run these checks inside Ubuntu.
 ### Personal
 
 - [ ] Confirm the Railway login, intended project context and availability of `use-railway` when AI setup is enabled.
-- [ ] Confirm the verifier reports work-only tools and runtime state absent, including Rust, PDF/media tools, Azure CLI, credential provider, SqlPackage, Tesseract and the Docker API service.
+- [ ] Confirm the verifier reports work-only tools and runtime state absent, including Rust, PDF/media tools, Azure CLI, credential provider, SqlPackage and Tesseract.
 - [ ] Confirm `db --help` lists only PostgreSQL and rejects SQL Server and Redis.
 
 ## Infrastructure
@@ -79,7 +80,7 @@ bin/dev rebuild work --dry-run
 bin/dev rebuild work
 ```
 
-Use `personal` on the personal mini. Complete the [README checklist](../README.md#2-open-the-vm-and-check-provisioning)
-again, including authentication, TLS import and the work tunnel's new key.
+Use `personal` on the personal mini. Complete the [VM setup checklist](setup.md#2-open-the-vm-and-check-provisioning)
+again, including authentication, TLS import and any opted-in tunnel's new key.
 Repeat representative project, infrastructure and remote-client checks. A
 successful clean rebuild validates the documented setup for those workflows.

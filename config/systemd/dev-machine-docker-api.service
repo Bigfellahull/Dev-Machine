@@ -1,5 +1,5 @@
 [Unit]
-Description=Work VM access to the matching Mac's OrbStack Docker API
+Description=Opt-in VM access to the matching Mac's OrbStack Docker API
 ConditionPathExists=%h/.config/dev-machine/docker-api/config.json
 
 [Service]

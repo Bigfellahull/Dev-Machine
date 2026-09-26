@@ -39,10 +39,10 @@ bin/dev create work
 Use `personal` on the personal mini. `create` refuses an existing target; inspect
 `bin/dev list` before choosing a destructive rebuild instead.
 
-Complete the [README post-provision checklist](../README.md#2-open-the-vm-and-check-provisioning):
+Complete the [VM post-provision checklist](setup.md#2-open-the-vm-and-check-provisioning):
 restore private Git identity, reauthenticate, import a fresh matching TLS
 handoff, restore private database configuration, and clone projects into
-`~/code`. On work, revoke the lost VM's Docker API key on the Mac and commission
+`~/code`. For an opted-in bridge, revoke the lost VM's Docker API key on the Mac and commission
 a new unique key. Restore project-specific configuration and validate builds,
 tests, database connections and HTTPS before relying on the replacement.
 
@@ -65,7 +65,7 @@ VM exports do not include macOS Docker volumes.
 
 1. Apply the matching mini profile through [Mac-Bootstrap](https://github.com/Bigfellahull/Mac-Bootstrap), including OrbStack, Tailscale and Remote Login.
 2. Transfer or clone this repository as the host-side checkout and restore the matching ignored host configuration.
-3. Follow the [README setup walkthrough](../README.md#start-here) to create and commission the VM. Keep work and personal credentials separate.
+3. Follow the [VM setup guide](setup.md) to create and commission the VM. Keep work and personal credentials separate.
 4. Re-establish Air access through Mac-Bootstrap and verify the replacement's SSH host fingerprints.
 5. Re-establish the local TLS issuer and browser trust using the [TLS guide](local-dev-tls.md). A new CA requires explicit trust updates on every client.
 6. Restore required project database backups; the old Mac's Docker volumes are not part of the new VM.
@@ -89,7 +89,7 @@ The exact primary target must not already exist. Import restores the archive;
 it does not run bootstrap, refresh packages or complete commissioning. Start
 the imported VM, update it through `bin/dev provision PROFILE`, update its
 Ubuntu checkout to the matching revision, and run verification inside Ubuntu.
-Check restored logins, certificates and the work tunnel against the current
+Check restored logins, certificates and any opted-in tunnel against the current
 host. Replace stale or revoked credentials through the relevant setup guide.
 
 Archives contain private keys and credentials. Keep them confined to their

@@ -26,16 +26,27 @@ ssh personal-dev
 
 ## Zed
 
-Zed shells out to OpenSSH and reads `~/.ssh/config`, including jump-host
-settings. In Remote Projects, connect using:
+On the Air, with Tailscale connected and the destination mini/VM running:
 
-```text
-ssh work-dev
-```
+1. Open Zed and press **Ctrl+Cmd+Shift+O** for **Remote Projects**.
+2. Choose **Connect New Server** and enter `ssh personal-dev`.
+3. Let Zed download/start its remote server. Choose a project directory such as
+   `/home/LINUX_USER/code/project-a`, replacing the username and folder.
+4. Repeat with `ssh work-dev` and the work project folder. If no repositories
+   are cloned yet, open `~/code` temporarily rather than the whole home or `/`.
+5. In each project's Zed terminal, run `hostname`, `pwd` and `command -v mise`.
+   Confirm the matching VM, intended folder and managed tool environment.
 
-and open a specific directory such as `~/code/project-a`, not `/` or an enormous
-home directory. Language servers, tasks and terminals then run in Ubuntu. Zed
-supports ARM64 Linux remote servers and SSH `-J`/ProxyJump.
+Zed uses OpenSSH and the Air's existing jump-host configuration. Language
+servers, tasks and terminals run in Ubuntu. Do not open the Mountain Duck
+mount as a local Zed project when you intend to use the VM's development tools.
+The Finder mounts are useful for transferring files independently of Zed.
+
+If Zed cannot connect, first test `ssh personal-dev` or `ssh work-dev` in a local
+Air terminal. If SSH works, inspect Zed's **Open Log** command and confirm the
+VM can download its server. Do not replace working SSH keys as a first step.
+If the terminal lacks tools, start a fresh login shell with `exec bash -l` and
+rerun the VM verifier; an old terminal can predate bootstrap's PATH setup.
 
 See [Zed remote development](https://zed.dev/docs/remote-development).
 

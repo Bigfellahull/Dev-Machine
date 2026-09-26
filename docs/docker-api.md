@@ -1,8 +1,34 @@
-# Work Docker API access
+# Optional Docker API access
 
-Work applications such as Testcontainers and Aspire can use an SSH-forwarded
-OrbStack Docker API. Database administration still uses `db` and `mac docker`.
-The personal profile does not install this helper or service.
+Work or personal applications such as Testcontainers and Aspire can opt into an
+SSH-forwarded OrbStack Docker API. Both profiles default to disabled. Database
+administration still uses `db` and `mac docker`, and applications connect to
+PostgreSQL with ordinary database credentials; neither needs this tunnel.
+
+## Opt in
+
+On the matching mini, enable its [Mac-Bootstrap flag](https://github.com/Bigfellahull/Mac-Bootstrap/blob/main/docs/orbstack-docker-api.md#opt-in).
+Inside its Ubuntu VM, using an up-to-date Dev-Machine checkout:
+
+```bash
+mkdir -p ~/.config/dev-machine
+(umask 077; printf 'enabled\n' > ~/.config/dev-machine/docker-api-bridge)
+chmod 600 ~/.config/dev-machine/docker-api-bridge
+cd ~/code/dev-machine
+orb/docker-api.sh
+```
+
+The guest flag is local data, never sourced as shell code. It must be a regular,
+owned mode-600 file containing exactly `enabled` or `disabled`; a missing flag
+means disabled. The module also reads it during normal provisioning. The flag
+persists independently of the checkout. It installs the helper and user service,
+but does not generate a key or start the tunnel; continue below to commission.
+For a newly created VM, opt in after creation and run this targeted module.
+
+Existing commissioned work bridges need this flag and the host flag before
+applying the new module. Existing work keys/configuration remain valid. New
+personal bridges receive personal-marked keys and profile-bound configuration;
+copying work state does not convert it into personal state.
 
 The matching Mac owns the real OrbStack socket. A user systemd service forwards
 it to `${XDG_RUNTIME_DIR}/orbstack-docker.sock` inside Ubuntu. The runtime
@@ -11,9 +37,9 @@ mode `0600`. No Docker daemon is installed in Ubuntu.
 
 ## Commissioning
 
-Bootstrap installs the helper and unit without generating keys, accepting host
+When opted in, bootstrap installs the helper and unit without generating keys, accepting host
 keys or starting a connection. The supplied Mac host policy accepts one marked
-bridge authorisation per mini. Commission the primary work VM below; a clone
+bridge authorisation per mini. Commission the matching primary VM below; a clone
 requires the explicit handover described under isolation and recovery.
 
 1. Enable Remote Login on the matching Mac. Obtain its SSH host public key and
@@ -43,6 +69,8 @@ requires the explicit handover described under isolation and recovery.
    restrict,port-forwarding,command="/usr/bin/false" ssh-ed25519 PUBLIC_KEY_MATERIAL orbstack-docker-api-work-mini
    ```
 
+   For personal use the comment `orbstack-docker-api-personal-mini` and its
+   independently generated key. Never copy the work key.
 5. Inside Ubuntu, start and verify:
 
    ```bash
@@ -77,7 +105,8 @@ refuses to connect using its source VM's credentials. Before commissioning a
 clone, stop its inherited service and remove only its copied
 `~/.config/dev-machine/docker-api` directory after confirming the clone's
 identity. The supplied Mac host verifier accepts exactly one authorisation
-with the `orbstack-docker-api-work-mini` marker. Testing a clone with the bridge
+with the matching `orbstack-docker-api-work-mini` or
+`orbstack-docker-api-personal-mini` marker. Testing a clone with the bridge
 therefore requires a deliberate handover: stop the source tunnel, revoke its
 marked authorisation, initialise a new clone key and authorise that key on the
 Mac. Restore the primary authorisation explicitly when returning to it; do not
@@ -87,8 +116,8 @@ hostname to bypass the guest check.
 
 For key rotation, stop the service, revoke the old public key on the matching
 Mac, remove the exact local commissioning directory and initialise a new pair.
-Do not copy work tunnel state into a personal VM. Work state left on a personal
-profile is reported as an error.
+Do not copy work tunnel state into a personal VM. The configuration profile and VM hostname must both match; foreign state is
+reported as an error even when the new profile is opted in.
 
 ```bash
 orbstack-docker-api stop
@@ -99,6 +128,31 @@ Docker API access grants control of the matching engine. The dedicated SSH key
 cannot run shell commands, but its forwarding permission can reach other
 destinations available to the Mac account. Keep it private and revoke it when
 the VM is retired.
+
+## Disable
+
+Inside the VM, stop the service while the helper is still installed:
+
+```bash
+orbstack-docker-api stop
+```
+
+Revoke the matching marked public key on the mini, leaving unrelated entries
+alone. Then, inside Ubuntu:
+
+```bash
+printf 'disabled\n' > ~/.config/dev-machine/docker-api-bridge
+chmod 600 ~/.config/dev-machine/docker-api-bridge
+orb/docker-api.sh
+```
+
+Run the module from the current checkout. It stops/disables the managed service
+and removes the managed helper/unit. It preserves credentials and returns an
+error if `~/.config/dev-machine/docker-api` remains. After confirming the host
+key authorisation was revoked, remove only that exact private directory, rerun
+the module, and verify. Set the matching mini flag to disabled too. Do not just
+remove a flag and assume a running tunnel has stopped. Disabled verification
+rejects leftover service, helper or credential state.
 
 ## References
 

@@ -25,6 +25,8 @@ class DockerApiTests(unittest.TestCase):
         self.parent = self.home / ".config/dev-machine"
         self.parent.mkdir(parents=True)
         (self.parent / "profile").write_text("work\n")
+        (self.parent / "docker-api-bridge").write_text("enabled\n")
+        (self.parent / "docker-api-bridge").chmod(0o600)
         self.state = self.parent / "docker-api"
         self.runtime = self.root / "run"
         self.runtime.mkdir(mode=0o700)
@@ -86,14 +88,68 @@ print(s.st_uid if sys.argv[2] == "%u" else oct(stat.S_IMODE(s.st_mode))[2:])
         self.assertEqual(key, (self.state / "id_ed25519").read_bytes())
         self.assertFalse(Path(self.env["SSH_LOG"]).exists())
 
-    def test_personal_cannot_commission_or_connect(self):
-        """A personal profile cannot consume copied work configuration."""
-        self._init()
+    def test_personal_opt_in_and_profile_isolation(self):
+        """Personal can commission its own key but cannot use copied work state."""
         (self.parent / "profile").write_text("personal\n")
+        self.env["MOCK_HOSTNAME"] = "personal-dev"
+        self._init()
+        config = json.loads((self.state / "config.json").read_text())
+        self.assertEqual(config["profile"], "personal")
+        self.assertIn("orbstack-docker-api-personal-mini", (self.state / "id_ed25519.pub").read_text())
+        (self.parent / "profile").write_text("work\n")
         self._run("serve", ok=False)
+        self.assertFalse(Path(self.env["SSH_LOG"]).exists())
+
+    def test_explicit_opt_in_required(self):
+        """Both profiles fail closed without a valid private opt-in file."""
+        flag = self.parent / "docker-api-bridge"
+        for profile in ["work", "personal"]:
+            (self.parent / "profile").write_text(profile + "\n")
+            for value in ["disabled\n", "yes\n"]:
+                flag.write_text(value)
+                self._init_disabled()
+            flag.unlink()
+            self._init_disabled()
+            flag.write_text("enabled\n")
+            flag.chmod(0o644)
+            self._init_disabled()
+            flag.chmod(0o600)
+
+    def _init_disabled(self):
         self._run("init", "work-mini", "operator", "/home/operator/.orbstack/run/docker.sock",
                   str(self.known_hosts), ok=False)
-        self.assertFalse(Path(self.env["SSH_LOG"]).exists())
+        self.assertFalse(self.state.exists())
+
+    def test_installer_enable_disable_preserves_credentials(self):
+        """Both profiles install on opt-in; disabling stops the unit without erasing keys."""
+        bash_env = self.root / "module-env"
+        bash_env.write_text(f'. "{ROOT}/bootstrap/lib.sh"\nrequire_target_ubuntu() {{ :; }}\n')
+        self._mock("systemctl", '#!/bin/sh\nprintf "%s\n" "$*" >> "$SYSTEMCTL_LOG"\n')
+        env = dict(self.env, BASH_ENV=str(bash_env), SYSTEMCTL_LOG=str(self.root / "systemctl.log"))
+        installer = ROOT / "orb/docker-api.sh"
+        helper = self.home / ".local/bin/orbstack-docker-api"
+        unit = self.home / ".config/systemd/user/dev-machine-docker-api.service"
+        flag = self.parent / "docker-api-bridge"
+        for profile in ["work", "personal"]:
+            env["DEV_MACHINE_PROFILE"] = profile
+            flag.write_text("enabled\n")
+            result = subprocess.run([str(installer)], env=env, capture_output=True, text=True)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertEqual(helper.read_bytes(), HELPER.read_bytes())
+            self.assertTrue(unit.is_file())
+            self.state.mkdir(exist_ok=True)
+            (self.state / "keep").write_text("credential fixture")
+            flag.write_text("disabled\n")
+            result = subprocess.run([str(installer)], env=env, capture_output=True, text=True)
+            self.assertNotEqual(result.returncode, 0)
+            self.assertFalse(helper.exists())
+            self.assertFalse(unit.exists())
+            self.assertEqual((self.state / "keep").read_text(), "credential fixture")
+            self.assertIn("disable --now dev-machine-docker-api.service", (self.root / "systemctl.log").read_text())
+            (self.state / "keep").unlink()
+            self.state.rmdir()
+            result = subprocess.run([str(installer)], env=env, capture_output=True, text=True)
+            self.assertEqual(result.returncode, 0, result.stderr)
 
     def test_clone_cannot_reuse_credentials(self):
         """A changed VM hostname blocks inherited credentials before SSH starts."""

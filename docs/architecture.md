@@ -59,9 +59,9 @@ bootstrap/ modules + work/personal profile
 
 `bootstrap/` does not require OrbStack except for the optional Docker command
 bridge module. Another Ubuntu provider can reuse the rest of the bootstrap.
-The bridge delegates work-only Docker API service installation to `orb/`.
+The bridge delegates opt-in Docker API service installation to `orb/`.
 Its dedicated SSH key and verified Mac host key are commissioned inside each
-work VM. Applications opt into the forwarded API per command; database
+enabled VM. Applications opt into the forwarded API per command; database
 administration continues to use `mac docker`.
 
 Local development TLS follows the same provider-neutral boundary. The Mac
