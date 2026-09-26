@@ -65,3 +65,13 @@ and notification support. The managed `finish-dev` Bash alias runs
 The tmux server survives Air sleep, Wi-Fi changes and SSH disconnects while
 the VM remains running. Reattach with the same command. VM restarts and
 destruction end its sessions; important work must be committed and pushed.
+
+## VM files in Finder on the Air
+
+Mac-Bootstrap owns Mountain Duck installation and its two SFTP bookmarks; follow
+[its Finder commissioning guide](https://github.com/Bigfellahull/Mac-Bootstrap/blob/main/docs/mountain-duck.md).
+Use the existing `work-dev` and `personal-dev` SSH routes, each with its own key,
+to access the matching Linux home. No extra SMB server or client-side mount
+software is installed by this repository. Keep active source under `~/code` in
+Ubuntu and run builds and Git commands there. Finder mounts provide file access;
+they do not redirect browser links launched by the guest to the Air.
