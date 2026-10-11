@@ -312,6 +312,19 @@ else
   fail "code directory is missing: $HOME/code"
 fi
 
+tmp_backing=/var/lib/dev-machine/tmp
+if systemctl is-active --quiet dev-machine-tmp.service \
+  && [ "$(stat -c %d:%i /tmp)" = "$(stat -c %d:%i "$tmp_backing" 2>/dev/null)" ] \
+  && [ "$(stat -c %a /tmp)" = 1777 ] \
+  && temporary_storage_mount_options_valid /tmp; then
+  case "$(stat -f -c %T /tmp)" in
+    ''|tmpfs|ramfs) fail "/tmp is not disk-backed" ;;
+    *) pass "/tmp uses writable, executable disk-backed storage with sticky permissions, nosuid and nodev" ;;
+  esac
+else
+  fail "disk-backed /tmp is inactive or has incorrect mount options or permissions; provision temporary storage and restart the machine"
+fi
+
 active_swap=$(swapon --show=NAME --noheadings --raw 2>/dev/null || true)
 if [ -n "$active_swap" ]; then
   pass "swap is active: $(printf '%s\n' "$active_swap" | paste -sd, -)"

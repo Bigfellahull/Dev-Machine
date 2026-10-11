@@ -1,0 +1,15 @@
+[Unit]
+Description=Disk-backed development temporary storage
+DefaultDependencies=no
+RequiresMountsFor=/var/lib/dev-machine/tmp
+After=local-fs-pre.target tmp.mount
+Before=local-fs.target systemd-tmpfiles-setup.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/bin/mount --bind /var/lib/dev-machine/tmp /tmp
+ExecStart=/usr/bin/mount -o remount,bind,rw,exec,nosuid,nodev /tmp
+
+[Install]
+RequiredBy=local-fs.target

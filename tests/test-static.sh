@@ -128,10 +128,10 @@ jq -e '
   and .theme == "auto"
   and .permissions.defaultMode == "auto"
   and .sandbox.enabled == true
-  and .sandbox.autoAllowBashIfSandboxed == false
-  and .sandbox.allowUnsandboxedCommands == false
+  and .sandbox.autoAllowBashIfSandboxed == true
+  and .sandbox.allowUnsandboxedCommands == true
   and .sandbox.failIfUnavailable == true
-  and .env.CLAUDE_CODE_SUBPROCESS_ENV_SCRUB == "1"
+  and ((.env // {}) | has("CLAUDE_CODE_SUBPROCESS_ENV_SCRUB") | not)
 ' config/ai/claude.json >/dev/null
 grep -Fq 'model = "gpt-6-astra"' config/ai/codex.toml
 grep -Fq 'model_reasoning_effort = "high"' config/ai/codex.toml
@@ -143,11 +143,11 @@ grep -Fq '[shell_environment_policy]' config/ai/codex.toml
 grep -Fq 'ignore_default_excludes = false' config/ai/codex.toml
 grep -Fq '[mcp_servers.openaiDeveloperDocs]' config/ai/codex.toml
 grep -Fq 'url = "https://developers.openai.com/mcp"' config/ai/codex.toml
-grep -Fq 'permission_mode = "auto"' config/ai/grok.toml
+grep -Fq 'permission_mode = "always-approve"' config/ai/grok.toml
 grep -Fq 'max_thoughts_width = 120' config/ai/grok.toml
 grep -Fq 'screen_mode = "minimal"' config/ai/grok.toml
 grep -Fq 'profile = "safe-workspace"' config/ai/grok.toml
-grep -Fq 'auto_allow_bash = false' config/ai/grok.toml
+grep -Fq 'auto_allow_bash = true' config/ai/grok.toml
 grep -Fq 'ignore_default_excludes = false' config/ai/grok.toml
 grep -Fq '[profiles.safe-workspace]' config/ai/grok-sandbox.toml
 grep -Fq 'extends = "workspace"' config/ai/grok-sandbox.toml

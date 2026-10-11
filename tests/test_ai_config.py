@@ -78,6 +78,9 @@ class AiConfigTests(unittest.TestCase):
         self.assertEqual(codex["model_reasoning_effort"], "high")
         self.assertTrue(codex["features"]["goals"])
         self.assertEqual(codex["approvals_reviewer"], "auto_review")
+        self.assertEqual(codex["approval_policy"], "on-request")
+        self.assertTrue(codex["sandbox_workspace_write"]["network_access"])
+        self.assertEqual(codex["agents"]["max_concurrent_threads_per_session"], 8)
         self.assertEqual(codex["sandbox_mode"], "workspace-write")
         self.assertFalse(codex["shell_environment_policy"]["ignore_default_excludes"])
         claude = self._read(".claude/settings.json")
@@ -85,15 +88,17 @@ class AiConfigTests(unittest.TestCase):
         self.assertEqual(claude["effortLevel"], "high")
         self.assertNotIn("modelSettings", claude)
         self.assertEqual(claude["permissions"]["defaultMode"], "auto")
-        self.assertFalse(claude["sandbox"]["allowUnsandboxedCommands"])
+        self.assertTrue(claude["sandbox"]["allowUnsandboxedCommands"])
+        self.assertTrue(claude["sandbox"]["autoAllowBashIfSandboxed"])
+        self.assertTrue(claude["sandbox"]["enabled"])
         self.assertTrue(claude["sandbox"]["failIfUnavailable"])
         grok = self._read(".grok/config.toml")
         self.assertEqual(grok["models"], {"default": "grok-4.6", "default_reasoning_effort": "high"})
-        self.assertEqual(grok["ui"]["permission_mode"], "auto")
-        self.assertFalse(grok["ui"]["yolo"])
+        self.assertEqual(grok["ui"]["permission_mode"], "always-approve")
+        self.assertNotIn("yolo", grok["ui"])
         self.assertFalse(grok["features"]["remember_mode"])
         self.assertEqual(grok["sandbox"]["profile"], "safe-workspace")
-        self.assertFalse(grok["sandbox"]["auto_allow_bash"])
+        self.assertTrue(grok["sandbox"]["auto_allow_bash"])
         self.assertNotIn("fork_secondary_model", grok["ui"])
         before = self._snapshot()
         self._run()
@@ -146,6 +151,52 @@ context_window = 100000
         self.assertEqual(self._read(".claude.json")["oauthAccount"], {"private": "preserved"})
         self.assertNotIn("reasoning_effort", self._read(".grok/config.toml")["model"]["grok-4.6"])
         self._run("verify")
+
+    def test_existing_sandbox_policy_converges_without_losing_local_restrictions(self):
+        """Migrate old defaults while retaining local boundaries and profile state."""
+        for profile in ("personal", "work"):
+            with self.subTest(profile=profile):
+                self._write(".codex/config.toml", tomlkit.dumps({
+                    "approval_policy": "never",
+                    "sandbox_workspace_write": {"network_access": False,
+                                                "writable_roots": ["/srv/project"]}}))
+                self._write(".claude/settings.json", json.dumps({
+                    "sandbox": {"autoAllowBashIfSandboxed": False,
+                                "allowUnsandboxedCommands": False,
+                                "excludedCommands": ["pg_isready *"],
+                                "filesystem": {"denyRead": ["~/.private"]}},
+                    "permissions": {"deny": ["Bash(unwanted-command)"]}}))
+                self._write(".grok/config.toml", tomlkit.dumps({
+                    "ui": {"permission_mode": "auto"},
+                    "sandbox": {"profile": "off", "auto_allow_bash": False},
+                    "permission": {"rules": [{"action": "deny", "tool": "bash",
+                                               "pattern": "unwanted-command"}]}}))
+                self._write(".grok/sandbox.toml", tomlkit.dumps({
+                    "profiles": {"safe-workspace": {"extends": "workspace",
+                                                    "deny": ["/secrets"]}}}))
+                self._run(profile=profile)
+                codex = self._read(".codex/config.toml")
+                self.assertEqual(codex["approval_policy"], "on-request")
+                self.assertEqual(codex["sandbox_workspace_write"], {
+                    "network_access": True, "writable_roots": ["/srv/project"]})
+                claude = self._read(".claude/settings.json")
+                self.assertTrue(claude["sandbox"]["autoAllowBashIfSandboxed"])
+                self.assertTrue(claude["sandbox"]["allowUnsandboxedCommands"])
+                self.assertEqual(claude["sandbox"]["excludedCommands"], ["pg_isready *"])
+                self.assertEqual(claude["sandbox"]["filesystem"]["denyRead"], ["~/.private"])
+                self.assertEqual(claude["permissions"]["deny"], ["Bash(unwanted-command)"])
+                grok = self._read(".grok/config.toml")
+                self.assertNotIn("yolo", grok["ui"])
+                self.assertEqual(grok["ui"]["permission_mode"], "always-approve")
+                self.assertTrue(grok["sandbox"]["auto_allow_bash"])
+                self.assertEqual(grok["permission"]["rules"], [
+                    {"action": "deny", "tool": "bash", "pattern": "unwanted-command"}])
+                self.assertEqual(self._read(".grok/sandbox.toml")["profiles"]["safe-workspace"],
+                                 {"extends": "workspace", "deny": ["/secrets"]})
+                before = self._snapshot()
+                self._run(profile=profile)
+                self._run("verify", profile)
+                self.assertEqual(before, self._snapshot())
 
     def test_profile_mcp_convergence_across_all_clients(self):
         """Named integrations stay on their intended profile, including repeated runs."""

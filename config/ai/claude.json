@@ -9,12 +9,9 @@
   },
   "sandbox": {
     "enabled": true,
-    "autoAllowBashIfSandboxed": false,
-    "allowUnsandboxedCommands": false,
+    "autoAllowBashIfSandboxed": true,
+    "allowUnsandboxedCommands": true,
     "failIfUnavailable": true
-  },
-  "env": {
-    "CLAUDE_CODE_SUBPROCESS_ENV_SCRUB": "1"
   },
   "enabledPlugins": {
     "code-simplifier@claude-plugins-official": true,

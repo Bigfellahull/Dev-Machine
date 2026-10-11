@@ -76,6 +76,13 @@ independently.
 
 ## Resource defaults
 
+Both profiles bind `/var/lib/dev-machine/tmp` from the virtual disk onto `/tmp`
+early in boot, after any provider-supplied temporary mount and before normal
+services start. Build intermediates and caches therefore consume disk space,
+including tools with hard-coded `/tmp` paths. The mount keeps sticky permissions
+and disables device nodes and setuid execution while allowing build tools to run.
+Project-specific `TMPDIR` or `GOTMPDIR` settings are not required.
+
 The default ceiling is 24 GB RAM and 300 GB disk for a primary machine, leaving
 capacity for macOS and other host workloads. Override memory in ignored
 `config/local/host.env` to suit the host. CPU is unset by default so OrbStack's

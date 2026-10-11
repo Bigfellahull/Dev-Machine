@@ -1,5 +1,21 @@
 #!/usr/bin/env bash
 
+# Check that a temporary-storage mount permits builds and retains its protections.
+temporary_storage_mount_options_valid() {
+  local options required
+  options=$(findmnt --noheadings --uniq --output VFS-OPTIONS --target "$1") || return 1
+  [ -n "$options" ] && [[ "$options" != *$'\n'* ]] || return 1
+  for required in rw nosuid nodev; do
+    case ",$options," in
+      *",$required,"*) ;;
+      *) return 1 ;;
+    esac
+  done
+  case ",$options," in
+    *,ro,*|*,noexec,*) return 1 ;;
+  esac
+}
+
 # Check login startup independently of the verifier's repaired environment.
 bash_login_loads_environment() (
   cd "$HOME" || return 1

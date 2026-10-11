@@ -28,6 +28,28 @@ Every module ensures state and can be rerun. Apt installs, managed files, Git
 includes and shell source lines are idempotent. Rerunning also removes managed
 packages, mise tools and commands that do not belong to the selected profile.
 
+Immediately after `base.sh`, `temporary-storage.sh` prepares disk-backed `/tmp`
+for both profiles. Bootstrap uses that backing directory for its own temporary
+files while activation is pending.
+
+## Temporary storage
+
+`dev-machine-tmp.service` binds `/var/lib/dev-machine/tmp` onto `/tmp` at boot,
+after any provider-supplied `/tmp` mount and before normal services. This also
+handles OrbStack's pre-mounted tmpfs. New projects and commands with hard-coded
+`/tmp` paths use disk automatically; no shell environment overrides are needed.
+The mount is writable with mode `1777`, `nosuid` and `nodev`; executable build
+intermediates remain supported. Normal systemd temporary-file cleanup still
+applies, and temporary files must not be treated as durable project storage.
+
+Provisioning enables the service without starting it over a live `/tmp`, then
+marks a restart as required. The OrbStack provisioning workflow performs that
+restart; when running bootstrap directly, restart the machine before verification.
+Existing RAM-backed `/tmp` contents are not migrated automatically. Preserve any
+needed files before restarting an existing machine. The verifier checks that
+the disk-backed mount is active, writable and executable, with sticky permissions,
+`nosuid` and `nodev`.
+
 `shell.sh` installs the `local-dev-tls` importer, but bootstrap does not run it.
 The matching Mac-generated handoff contains a private leaf key and importing its
 public CA changes Ubuntu trust, so that remains an explicit commissioning step.
@@ -226,7 +248,7 @@ AI clients before provisioning so they cannot overwrite the updated settings.
 |---|---|---|---|
 | Codex | `gpt-6-astra` | `high` | `on-request` with `auto_review` |
 | Claude | `claude-fable-5-1` | `high` | `auto` |
-| Grok | `grok-4.6` | `high` | `auto` |
+| Grok | `grok-4.6` | `high` | `always-approve` |
 
 These are global defaults, not restrictions on explicit command-line or project
 overrides. Rerunning bootstrap restores the managed models, effort, permissions,
@@ -234,15 +256,59 @@ sandbox settings and named MCP registrations while preserving unrelated
 configuration and authentication state. Conflicting Claude Fable 5.1 effort
 overrides and Grok 4.6's legacy per-model effort setting are removed. No per-model
 effort overrides are installed. Codex goals are enabled but no goal is created.
+Codex allows up to eight open subagent threads per session, in addition to the
+primary agent. Start a fresh session after changing this limit; an existing
+controller may retain its original capacity.
 
-Codex retains its workspace-write sandbox and automatic approval reviewer.
-Claude retains its enabled sandbox, refuses unsandboxed commands and fails when
-the sandbox is unavailable. Grok uses `safe-workspace` with automatic Bash
-approval disabled. Automated safety checks can still block actions or require
-user input. Grok's `remember_mode` remains false so a temporary permission-mode
-change does not become the default for later sessions. Its secondary fork model
+Codex retains `workspace-write`, `on-request` and the automatic approval
+reviewer. Workspace commands have network access, including OrbStack host
+bridging; writes outside permitted roots can still request escalation.
+Claude keeps its sandbox enabled and fails if it is unavailable. Sandboxed Bash
+commands are auto-allowed; blocked commands may request an unsandboxed retry
+through the normal permission flow. The template leaves
+`CLAUDE_CODE_SUBPROCESS_ENV_SCRUB` unset: that additional hardening can force
+Manual mode and mask the forwarded Docker socket even on an unsandboxed retry.
+Remove this key once from existing Claude user settings; provisioning preserves
+unmentioned fields. This removes the extra subprocess credential filtering and
+process isolation, while retaining the main sandbox.
+
+Grok uses `safe-workspace`, extending the
+network-enabled `workspace` profile, with automatic Bash approval. The template
+omits the redundant legacy `ui.yolo` value. Remove that key once from existing user configurations; the merge preserves unmentioned fields.
+Explicit deny rules and hooks still apply, and plan review may interrupt Grok.
+These settings reduce routine prompts without guaranteeing unattended execution.
+Start fresh sessions after deployment; resumed Grok sessions retain their
+original sandbox profile. Grok's `remember_mode` remains false so a temporary
+permission-mode change does not become the default for later sessions. Its secondary fork model
 is unset, so forks use the main default model. This does not change Grok's
 separate conversational-memory settings.
+
+### Database and host access from agents
+
+Validate an endpoint outside the agent sandbox first using the
+[database endpoint checks](docker.md#check-the-database-endpoint). A refused
+`docker.orb.internal` connection is not necessarily a sandbox failure. Use the
+verified `host.orb.internal` fallback only in the affected project's private
+settings; preserve loopback-only published ports.
+
+Claude's Linux sandbox uses an isolated network namespace and a proxy. Adding
+`allowedDomains` does not give ordinary PostgreSQL, SQL Server or Redis drivers
+a direct TCP route. `allowUnixSockets` is not a per-path Linux exception. Prefer
+an unsandboxed retry for the particular database command or `mac docker` call,
+which remains subject to normal permissions. For a recurring command, consider
+a narrow project-local `sandbox.excludedCommands` pattern after testing it.
+Excluded commands lose filesystem isolation too; do not exclude general
+interpreters or every build/test command globally. Do not enable all Unix
+sockets or disable the whole sandbox merely to fix one connection.
+
+Use `mac docker` for administration and the separately commissioned
+[command-scoped API wrapper](docker-api.md) for API consumers. A missing API
+socket is expected when that optional bridge has not been enabled. Never
+install a guest Docker daemon to repair either path.
+
+See the vendor documentation for [Codex configuration](https://learn.chatgpt.com/docs/config-file/config-reference),
+[Claude sandboxing](https://code.claude.com/docs/en/sandboxing) and
+[Grok sandbox profiles](https://docs.x.ai/build/features/sandbox).
 
 ### MCP servers and authentication
 

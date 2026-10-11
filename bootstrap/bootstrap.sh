@@ -73,6 +73,10 @@ if ! sudo -n true 2>/dev/null; then
 fi
 
 "$SCRIPT_DIR/base.sh"
+"$SCRIPT_DIR/temporary-storage.sh"
+# The new /tmp mount activates on reboot; bootstrap downloads already use disk.
+export TMPDIR=/var/lib/dev-machine/tmp
+export TMP="$TMPDIR" TEMP="$TMPDIR"
 "$SCRIPT_DIR/memory.sh"
 "$SCRIPT_DIR/dotnet.sh"
 "$SCRIPT_DIR/runtimes.sh"

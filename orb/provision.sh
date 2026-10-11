@@ -31,7 +31,7 @@ restart_if_required() {
   fi
 
   if [ "$reboot_required" -eq 1 ]; then
-    orb_log "Restarting $DEV_MACHINE_NAME after Ubuntu package upgrades"
+    orb_log "Restarting $DEV_MACHINE_NAME to apply pending system changes"
     run_orbctl restart "$DEV_MACHINE_NAME"
     run_orbctl run -m "$DEV_MACHINE_NAME" cloud-init status --wait
   fi

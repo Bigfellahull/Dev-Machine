@@ -24,6 +24,22 @@ assert_not_contains "$output" 'more output'
 
 mock_directory=$(mktemp -d "${TMPDIR:-/tmp}/dev-machine-verify-test.XXXXXX")
 trap 'rm -R "$mock_directory"' EXIT
+cat >"$mock_directory/findmnt" <<'EOF'
+#!/usr/bin/env bash
+[ "${TEST_FINDMNT_FAIL:-0}" = 0 ] || exit 1
+printf '%s\n' "$TEST_MOUNT_OPTIONS"
+EOF
+chmod +x "$mock_directory/findmnt"
+PATH="$mock_directory:$PATH" TEST_MOUNT_OPTIONS=rw,nosuid,nodev,relatime \
+  temporary_storage_mount_options_valid /tmp
+for options in ro,nosuid,nodev rw,nosuid,nodev,noexec rw,nodev rw,nosuid '' \
+  $'rw,nosuid,nodev\nro,nosuid,nodev'; do
+  PATH="$mock_directory:$PATH" TEST_MOUNT_OPTIONS="$options" \
+    assert_fails temporary_storage_mount_options_valid /tmp
+done
+PATH="$mock_directory:$PATH" TEST_FINDMNT_FAIL=1 \
+  assert_fails temporary_storage_mount_options_valid /tmp
+
 cat >"$mock_directory/sqlcmd" <<'EOF'
 #!/usr/bin/env bash
 case "${SQLCMD_TEST_MODE:-normal}" in
